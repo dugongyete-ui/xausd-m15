@@ -5,289 +5,484 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
-    <title>XAUUSD Signal Engine</title>
+    <title>XAUUSD M15 Signal Engine</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-primary: #0a0e17;
-            --bg-secondary: #111827;
-            --bg-card: #1a2332;
-            --border: #2a3a50;
-            --text-primary: #e2e8f0;
+            --bg-primary: #0b0f19;
+            --bg-secondary: #111828;
+            --bg-card: #161d2e;
+            --bg-card-hover: #1c2540;
+            --bg-inset: #0d1220;
+            --border: #1e293b;
+            --border-light: #283548;
+            --text-primary: #f1f5f9;
             --text-secondary: #94a3b8;
             --text-muted: #64748b;
-            --green: #22c55e;
-            --green-dim: rgba(34,197,94,0.15);
-            --red: #ef4444;
-            --red-dim: rgba(239,68,68,0.15);
-            --blue: #3b82f6;
-            --blue-dim: rgba(59,130,246,0.15);
+            --green: #10b981;
+            --green-bright: #34d399;
+            --green-dim: rgba(16,185,129,0.12);
+            --green-glow: rgba(16,185,129,0.25);
+            --red: #f43f5e;
+            --red-bright: #fb7185;
+            --red-dim: rgba(244,63,94,0.12);
+            --red-glow: rgba(244,63,94,0.25);
+            --blue: #6366f1;
+            --blue-bright: #818cf8;
+            --blue-dim: rgba(99,102,241,0.12);
             --yellow: #f59e0b;
-            --yellow-dim: rgba(245,158,11,0.15);
+            --yellow-dim: rgba(245,158,11,0.12);
             --gold: #fbbf24;
-            --gold-dim: rgba(251,191,36,0.12);
+            --gold-dim: rgba(251,191,36,0.08);
+            --radius: 12px;
+            --radius-sm: 8px;
+            --shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+            --shadow-lg: 0 4px 14px rgba(0,0,0,0.4);
         }
+
         * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
         html, body { height:100%; overflow-x:hidden; }
         body {
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
             background: var(--bg-primary);
             color: var(--text-primary);
             font-size: 14px;
+            line-height: 1.5;
         }
 
-        /* ── Header ── */
+        /* ---- Header ---- */
         .header {
-            background: linear-gradient(135deg, var(--bg-secondary), var(--bg-card));
+            background: rgba(17,24,40,0.85);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
             border-bottom: 1px solid var(--border);
-            padding: 10px 14px;
+            padding: 12px 16px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 8px;
+            gap: 10px;
             position: sticky;
             top: 0;
             z-index: 100;
         }
-        .logo { font-size: 16px; font-weight: 700; color: var(--gold); letter-spacing: 0.5px; }
-        .logo small { color: var(--text-secondary); font-weight: 400; font-size: 11px; display: block; }
-        .status-badges { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+        .logo-group { display:flex; align-items:center; gap:10px; }
+        .logo-icon {
+            width: 36px; height: 36px; border-radius: 10px;
+            background: linear-gradient(135deg, var(--gold), #f59e0b);
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 900; font-size: 14px; color: #0b0f19;
+            box-shadow: 0 2px 8px rgba(251,191,36,0.3);
+        }
+        .logo-text { font-size: 15px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.3px; }
+        .logo-text small { color: var(--text-muted); font-weight: 500; font-size: 11px; display: block; letter-spacing: 0.5px; }
+        .header-right { display: flex; align-items: center; gap: 8px; }
+        .clock {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px; font-weight: 600; color: var(--text-muted);
+            padding: 4px 10px; background: var(--bg-inset); border-radius: 6px;
+            border: 1px solid var(--border);
+        }
+        .status-badges { display: flex; gap: 6px; align-items: center; }
         .badge {
             display: inline-flex; align-items: center; gap: 5px;
-            padding: 4px 10px; border-radius: 20px;
+            padding: 5px 10px; border-radius: 20px;
             font-size: 11px; font-weight: 600;
+            border: 1px solid transparent;
+            transition: all 0.3s;
         }
-        .badge.connected { background: var(--green-dim); color: var(--green); }
-        .badge.disconnected { background: var(--red-dim); color: var(--red); }
-        .badge.connecting { background: var(--yellow-dim); color: var(--yellow); }
-        .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+        .badge.connected { background: var(--green-dim); color: var(--green); border-color: rgba(16,185,129,0.2); }
+        .badge.disconnected { background: var(--red-dim); color: var(--red); border-color: rgba(244,63,94,0.2); }
+        .badge.connecting { background: var(--yellow-dim); color: var(--yellow); border-color: rgba(245,158,11,0.2); }
+        .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
         .dot.pulse { animation: pulse 1.5s ease-in-out infinite; }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
-        /* ── Main Layout ── */
-        .main { padding: 10px 10px 80px; max-width: 900px; margin: 0 auto; }
+        /* ---- Main Layout ---- */
+        .main { padding: 16px; max-width: 960px; margin: 0 auto; }
 
         .card {
             background: var(--bg-card);
             border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 12px 14px;
-            margin-bottom: 10px;
+            border-radius: var(--radius);
+            padding: 16px;
+            margin-bottom: 12px;
+            box-shadow: var(--shadow);
+            transition: border-color 0.3s;
         }
         .card-title {
-            font-size: 10px; font-weight: 700;
+            font-size: 11px; font-weight: 700;
             text-transform: uppercase; letter-spacing: 1.5px;
-            color: var(--text-muted); margin-bottom: 10px;
+            color: var(--text-muted); margin-bottom: 12px;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .card-title::before {
+            content: ''; width: 3px; height: 12px;
+            background: var(--blue); border-radius: 2px;
         }
 
-        /* ── Live Price Top Bar ── */
+        /* ---- Price Bar ---- */
         .price-bar {
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr 1fr;
-            gap: 8px;
-            margin-bottom: 10px;
+            grid-template-columns: 1.5fr 1fr 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 12px;
         }
         .price-tile {
             background: var(--bg-card);
             border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 10px 12px;
+            border-radius: var(--radius);
+            padding: 14px 16px;
             text-align: center;
+            box-shadow: var(--shadow);
+            transition: all 0.3s;
         }
-        .price-tile .label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 4px; }
-        .price-tile .value { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-primary); }
-        .price-tile.price-main .value { font-size: 20px; color: var(--gold); }
+        .price-tile .label {
+            font-size: 10px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 1.2px; color: var(--text-muted); margin-bottom: 6px;
+        }
+        .price-tile .value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 16px; font-weight: 700; color: var(--text-primary);
+        }
+        .price-tile.price-main {
+            border-color: var(--border-light);
+            background: linear-gradient(135deg, var(--bg-card), rgba(251,191,36,0.04));
+        }
+        .price-tile.price-main .value {
+            font-size: 24px; font-weight: 800; color: var(--gold);
+            text-shadow: 0 0 20px rgba(251,191,36,0.2);
+        }
+        .price-change {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px; margin-top: 4px; font-weight: 600;
+        }
         .price-change.up { color: var(--green); }
         .price-change.down { color: var(--red); }
         .price-change.neutral { color: var(--text-muted); }
 
-        /* ── Signal Card ── */
+        /* ---- Signal Card ---- */
         .signal-card {
-            border-radius: 10px;
-            border: 2px solid var(--border);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
             background: var(--bg-card);
-            padding: 14px;
-            margin-bottom: 10px;
+            padding: 20px;
+            margin-bottom: 12px;
             text-align: center;
             position: relative;
             overflow: hidden;
-            transition: border-color 0.3s, background 0.3s;
+            transition: all 0.4s ease;
+            box-shadow: var(--shadow);
         }
-        .signal-card.call { border-color: var(--green); background: linear-gradient(135deg, var(--bg-card), rgba(34,197,94,0.06)); }
-        .signal-card.put { border-color: var(--red); background: linear-gradient(135deg, var(--bg-card), rgba(239,68,68,0.06)); }
-        .signal-card.pending { border-color: var(--yellow); background: linear-gradient(135deg, var(--bg-card), rgba(245,158,11,0.03)); }
-        .signal-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-muted); margin-bottom: 6px; }
+        .signal-card::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0;
+            height: 3px; transition: background 0.3s;
+        }
+        .signal-card.call { border-color: rgba(16,185,129,0.3); background: linear-gradient(180deg, rgba(16,185,129,0.06), var(--bg-card)); }
+        .signal-card.call::before { background: linear-gradient(90deg, var(--green), var(--green-bright)); }
+        .signal-card.put { border-color: rgba(244,63,94,0.3); background: linear-gradient(180deg, rgba(244,63,94,0.06), var(--bg-card)); }
+        .signal-card.put::before { background: linear-gradient(90deg, var(--red), var(--red-bright)); }
+        .signal-card.pending { border-color: rgba(245,158,11,0.2); }
+        .signal-card.pending::before { background: linear-gradient(90deg, var(--yellow), #fbbf24); }
+        .signal-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: var(--text-muted); margin-bottom: 8px; }
         .signal-value {
-            font-size: clamp(40px, 12vw, 64px);
-            font-weight: 900; letter-spacing: 4px; line-height: 1;
-            margin-bottom: 8px;
+            font-size: clamp(42px, 12vw, 68px);
+            font-weight: 900; letter-spacing: 6px; line-height: 1;
+            margin-bottom: 12px;
         }
-        .signal-value.call { color: var(--green); }
-        .signal-value.put { color: var(--red); }
+        .signal-value.call { color: var(--green-bright); text-shadow: 0 0 30px var(--green-glow); }
+        .signal-value.put { color: var(--red-bright); text-shadow: 0 0 30px var(--red-glow); }
         .signal-value.pending { color: var(--yellow); }
         .signal-meta {
             display: grid; grid-template-columns: 1fr 1fr 1fr 1fr;
-            gap: 6px; margin-top: 10px;
+            gap: 8px; margin-top: 16px;
+        }
+        .signal-meta-item {
+            background: var(--bg-inset); border-radius: var(--radius-sm);
+            padding: 8px; border: 1px solid var(--border);
         }
         .signal-meta-item .meta-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); }
-        .signal-meta-item .meta-value { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-primary); margin-top: 2px; }
-        @keyframes signalFlash { 0%{transform:scale(1)} 50%{transform:scale(1.03)} 100%{transform:scale(1)} }
+        .signal-meta-item .meta-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px; font-weight: 600; color: var(--text-primary); margin-top: 3px;
+        }
+        @keyframes signalFlash { 0%{transform:scale(1)} 50%{transform:scale(1.02)} 100%{transform:scale(1)} }
         .signal-flash { animation: signalFlash 0.5s ease; }
 
-        /* ── Phase Bar ── */
-        .phase-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-        .phase-name { font-size: 14px; font-weight: 700; color: var(--blue); text-transform: capitalize; }
-        .phase-timer { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
-        .phase-bar { display: flex; gap: 3px; height: 6px; border-radius: 3px; overflow: hidden; margin-bottom: 6px; }
-        .phase-seg { border-radius: 2px; transition: background 0.3s; }
-        .phase-seg.collection { flex:3; background:var(--text-muted); }
-        .phase-seg.analysis { flex:2; background:var(--text-muted); }
-        .phase-seg.signal { flex:0.5; background:var(--text-muted); }
-        .phase-seg.hold { flex:10; background:var(--text-muted); }
-        .phase-seg.active { background:var(--blue); box-shadow: 0 0 6px rgba(59,130,246,0.5); }
-        .phase-seg.completed { background:var(--green); }
-        .phase-footer { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); }
-        .spike-badge { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; }
-        .spike-badge.clear { background:var(--green-dim); color:var(--green); }
-        .spike-badge.active { background:var(--red-dim); color:var(--red); }
+        /* ---- Phase Section ---- */
+        .phase-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .phase-name {
+            font-size: 13px; font-weight: 700; color: var(--blue-bright);
+            text-transform: uppercase; letter-spacing: 0.5px;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .phase-name::before {
+            content: ''; width: 8px; height: 8px; border-radius: 50%;
+            background: var(--blue-bright); box-shadow: 0 0 8px var(--blue);
+        }
+        .phase-timer {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 24px; font-weight: 800; letter-spacing: 1px;
+        }
+        .phase-bar { display: flex; gap: 3px; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 10px; }
+        .phase-seg { border-radius: 3px; transition: all 0.4s; background: var(--bg-inset); }
+        .phase-seg.collection { flex: 3; }
+        .phase-seg.analysis { flex: 2; }
+        .phase-seg.signal { flex: 0.5; }
+        .phase-seg.hold { flex: 10; }
+        .phase-seg.active { background: var(--blue); box-shadow: 0 0 10px rgba(99,102,241,0.4); }
+        .phase-seg.completed { background: var(--green); }
+        .phase-footer { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--text-muted); }
+        .spike-badge {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 3px 10px; border-radius: 12px;
+            font-size: 10px; font-weight: 700;
+            border: 1px solid transparent;
+        }
+        .spike-badge.clear { background: var(--green-dim); color: var(--green); border-color: rgba(16,185,129,0.15); }
+        .spike-badge.active { background: var(--red-dim); color: var(--red); border-color: rgba(244,63,94,0.15); }
 
-        /* ── Chart ── */
+        /* ---- Chart ---- */
         .chart-container {
             position: relative; width: 100%;
-            height: clamp(180px, 35vw, 280px);
-            background: #0d1117; border-radius: 8px; overflow: hidden;
+            height: clamp(200px, 35vw, 300px);
+            background: var(--bg-inset); border-radius: var(--radius-sm);
+            overflow: hidden; border: 1px solid var(--border);
         }
         .chart-container canvas { width:100%; height:100%; display:block; }
-        .chart-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
-        .chart-win-label { font-size:12px; color:var(--text-secondary); font-variant-numeric:tabular-nums; }
+        .chart-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+        .chart-info { display: flex; flex-direction: column; gap: 2px; }
+        .chart-title { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+        .chart-win-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px; color: var(--text-muted);
+        }
         .chart-signal-badge {
-            display:inline-flex; align-items:center; gap:5px;
-            padding:4px 12px; border-radius:6px; font-weight:700; font-size:13px; letter-spacing:0.5px;
+            display: inline-flex; align-items: center; gap: 5px;
+            padding: 5px 14px; border-radius: var(--radius-sm);
+            font-weight: 700; font-size: 13px; letter-spacing: 0.5px;
+            border: 1px solid transparent;
         }
-        .chart-signal-badge.call { background:var(--green-dim); color:var(--green); }
-        .chart-signal-badge.put { background:var(--red-dim); color:var(--red); }
-        .chart-signal-badge.pending { background:var(--yellow-dim); color:var(--yellow); }
+        .chart-signal-badge.call { background: var(--green-dim); color: var(--green); border-color: rgba(16,185,129,0.2); }
+        .chart-signal-badge.put { background: var(--red-dim); color: var(--red); border-color: rgba(244,63,94,0.2); }
+        .chart-signal-badge.pending { background: var(--yellow-dim); color: var(--yellow); border-color: rgba(245,158,11,0.2); }
 
-        /* ── Indicators Grid ── */
-        .indicators-grid { display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px; }
-        .indicator-row { display:flex; align-items:center; justify-content:space-between; padding:7px 0; border-bottom:1px solid rgba(255,255,255,0.05); }
-        .indicator-row:last-child { border-bottom:none; }
-        .indicator-label { font-size:12px; color:var(--text-secondary); }
-        .indicator-value { font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; }
+        /* ---- Indicators Grid ---- */
+        .indicators-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+        .indicator-row {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+        .indicator-row:last-child { border-bottom: none; }
+        .indicator-label { font-size: 12px; color: var(--text-secondary); font-weight: 500; }
+        .indicator-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px; font-weight: 700;
+        }
 
-        /* ── Momentum Bar ── */
-        .momentum-bar-wrap { width:100%; height:20px; background:var(--bg-primary); border-radius:10px; overflow:hidden; position:relative; margin:10px 0; }
-        .momentum-bar-fill { height:100%; border-radius:10px; transition:width 0.5s ease, background 0.3s; position:relative; }
-        .momentum-bar-label { position:absolute; right:8px; top:50%; transform:translateY(-50%); font-size:10px; font-weight:700; color:white; }
-        .momentum-center { position:absolute; left:50%; top:0; bottom:0; width:2px; background:var(--text-muted); z-index:2; }
+        /* ---- Momentum Bar ---- */
+        .momentum-bar-wrap {
+            width: 100%; height: 24px;
+            background: var(--bg-inset); border-radius: 12px;
+            overflow: hidden; position: relative; margin: 12px 0;
+            border: 1px solid var(--border);
+        }
+        .momentum-bar-fill {
+            height: 100%; border-radius: 12px;
+            transition: width 0.5s ease, background 0.3s;
+            position: relative;
+        }
+        .momentum-bar-label {
+            position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px; font-weight: 700; color: white;
+        }
+        .momentum-center {
+            position: absolute; left: 50%; top: 2px; bottom: 2px;
+            width: 2px; background: var(--text-muted); z-index: 2; border-radius: 1px;
+            opacity: 0.5;
+        }
 
-        /* ── Score ── */
-        .score-display { text-align:center; margin:4px 0 10px; }
-        .score-value { font-size:clamp(36px,10vw,52px); font-weight:900; font-variant-numeric:tabular-nums; }
-        .score-value.positive { color:var(--green); }
-        .score-value.negative { color:var(--red); }
-        .score-value.neutral { color:var(--text-muted); }
+        /* ---- Score ---- */
+        .score-display { text-align: center; margin: 8px 0 14px; }
+        .score-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: clamp(40px, 10vw, 56px);
+            font-weight: 900;
+        }
+        .score-value.positive { color: var(--green-bright); text-shadow: 0 0 20px var(--green-glow); }
+        .score-value.negative { color: var(--red-bright); text-shadow: 0 0 20px var(--red-glow); }
+        .score-value.neutral { color: var(--text-muted); }
+        .score-legend {
+            margin-top: 10px; padding: 8px 12px;
+            background: var(--bg-inset); border-radius: var(--radius-sm);
+            font-size: 11px; color: var(--text-muted); text-align: center;
+            border: 1px solid var(--border);
+        }
 
-        /* ── Signal History ── */
-        .history-list { max-height:240px; overflow-y:auto; }
+        /* ---- Signal History ---- */
+        .history-list { max-height: 260px; overflow-y: auto; }
         .history-item {
-            display:flex; align-items:center; justify-content:space-between;
-            padding:8px 10px; margin-bottom:5px;
-            background:var(--bg-primary); border-radius:7px;
-            border-left:3px solid;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 10px 12px; margin-bottom: 6px;
+            background: var(--bg-inset); border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            transition: background 0.2s;
         }
-        .history-item.call { border-color:var(--green); }
-        .history-item.put { border-color:var(--red); }
-        .history-sig { font-weight:800; font-size:13px; min-width:40px; }
-        .history-sig.call { color:var(--green); }
-        .history-sig.put { color:var(--red); }
-        .history-price { font-size:13px; font-variant-numeric:tabular-nums; }
-        .history-meta { font-size:10px; color:var(--text-muted); text-align:right; }
-        .outcome-badge { font-size:9px; font-weight:700; padding:1px 5px; border-radius:4px; margin-top:2px; display:inline-block; }
-        .outcome-badge.WIN { background:var(--green-dim); color:var(--green); }
-        .outcome-badge.LOSS { background:var(--red-dim); color:var(--red); }
+        .history-item:hover { background: var(--bg-card-hover); }
+        .history-item.call { border-left: 3px solid var(--green); }
+        .history-item.put { border-left: 3px solid var(--red); }
+        .history-sig { font-weight: 800; font-size: 13px; min-width: 42px; }
+        .history-sig.call { color: var(--green); }
+        .history-sig.put { color: var(--red); }
+        .history-price {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+        }
+        .history-meta { font-size: 10px; color: var(--text-muted); text-align: right; }
+        .outcome-badge {
+            font-size: 9px; font-weight: 700; padding: 2px 6px;
+            border-radius: 4px; margin-top: 2px; display: inline-block;
+        }
+        .outcome-badge.WIN { background: var(--green-dim); color: var(--green); }
+        .outcome-badge.LOSS { background: var(--red-dim); color: var(--red); }
 
-        /* ── Signal Grid ── */
-        .signal-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:5px; }
+        /* ---- Signal Grid ---- */
+        .signal-grid { display: grid; grid-template-columns: repeat(6,1fr); gap: 6px; }
         .grid-cell {
-            padding:6px 2px; border-radius:6px; text-align:center;
-            font-size:10px; font-weight:700; border:1px solid transparent;
-            cursor:default;
+            padding: 8px 4px; border-radius: var(--radius-sm); text-align: center;
+            font-size: 10px; font-weight: 700; border: 1px solid transparent;
+            cursor: default; transition: all 0.2s;
         }
-        .grid-cell.call { background:rgba(34,197,94,0.2); color:var(--green); border-color:rgba(34,197,94,0.3); }
-        .grid-cell.put { background:rgba(239,68,68,0.2); color:var(--red); border-color:rgba(239,68,68,0.3); }
-        .grid-cell.current { border-color:var(--gold); box-shadow:0 0 6px var(--gold-dim); }
-        .grid-cell .cell-time { font-size:9px; display:block; font-weight:600; }
-        .grid-cell .cell-sig { font-size:9px; font-weight:800; margin-top:1px; display:block; }
+        .grid-cell.call { background: var(--green-dim); color: var(--green); border-color: rgba(16,185,129,0.2); }
+        .grid-cell.put { background: var(--red-dim); color: var(--red); border-color: rgba(244,63,94,0.2); }
+        .grid-cell.current { border-color: var(--gold); box-shadow: 0 0 8px var(--gold-dim); }
+        .grid-cell .cell-time {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px; display: block; font-weight: 600;
+        }
+        .grid-cell .cell-sig { font-size: 9px; font-weight: 800; margin-top: 2px; display: block; }
 
-        .win-rate-row { display:flex; align-items:center; gap:12px; margin-bottom:10px; }
-        .wr-value { font-size:28px; font-weight:900; color:var(--green); }
-        .wr-stats { font-size:11px; color:var(--text-secondary); }
-        .wr-stats span { display:inline-block; margin-right:8px; }
+        .win-rate-row { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+        .wr-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 30px; font-weight: 900; color: var(--green);
+        }
+        .wr-stats { font-size: 11px; color: var(--text-secondary); }
+        .wr-stats span { display: inline-block; margin-right: 10px; font-weight: 600; }
 
-        /* ── Tick Log ── */
+        /* ---- Tick Log ---- */
         .tick-log {
-            max-height:160px; overflow-y:auto;
-            font-family: 'Consolas','Monaco',monospace; font-size:11px;
-            color:var(--text-secondary); background:var(--bg-primary);
-            border-radius:7px; padding:8px;
+            max-height: 180px; overflow-y: auto;
+            font-family: 'JetBrains Mono', monospace; font-size: 11px;
+            color: var(--text-secondary); background: var(--bg-inset);
+            border-radius: var(--radius-sm); padding: 10px;
+            border: 1px solid var(--border);
         }
-        .tick-entry { display:flex; justify-content:space-between; padding:1px 0; }
-        .tick-entry.spike { color:var(--red); opacity:0.6; }
+        .tick-entry { display: flex; justify-content: space-between; padding: 2px 0; }
+        .tick-entry.spike { color: var(--red); opacity: 0.6; }
 
-        /* ── Buffer Bar ── */
-        .buffer-bar { width:100%; height:4px; background:var(--bg-primary); border-radius:2px; overflow:hidden; margin-top:6px; }
-        .buffer-fill { height:100%; background:var(--blue); border-radius:2px; transition:width 0.3s; }
+        /* ---- Buffer Bar ---- */
+        .buffer-bar {
+            width: 100%; height: 4px; background: var(--bg-inset);
+            border-radius: 2px; overflow: hidden; margin-top: 6px;
+        }
+        .buffer-fill {
+            height: 100%; background: linear-gradient(90deg, var(--blue), var(--blue-bright));
+            border-radius: 2px; transition: width 0.3s;
+        }
 
-        /* ── Footer ── */
-        .footer { text-align:center; padding:12px; color:var(--text-muted); font-size:10px; border-top:1px solid var(--border); }
+        /* ---- Footer ---- */
+        .footer {
+            text-align: center; padding: 16px;
+            color: var(--text-muted); font-size: 10px;
+            border-top: 1px solid var(--border);
+            background: var(--bg-secondary);
+            letter-spacing: 0.3px;
+        }
 
-        /* ── Scrollbar ── */
-        ::-webkit-scrollbar { width:4px; }
-        ::-webkit-scrollbar-track { background:transparent; }
-        ::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+        /* ---- Scrollbar ---- */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 2px; }
 
-        /* ── Mobile ── */
-        @media (max-width:480px) {
-            .main { padding: 8px 8px 70px; }
+        /* ---- Loading Overlay ---- */
+        .loading-overlay {
+            position: fixed; inset: 0; z-index: 200;
+            background: var(--bg-primary);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            gap: 16px; transition: opacity 0.5s, visibility 0.5s;
+        }
+        .loading-overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+        .loading-spinner {
+            width: 40px; height: 40px; border-radius: 50%;
+            border: 3px solid var(--border);
+            border-top-color: var(--gold);
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text { font-size: 13px; color: var(--text-muted); font-weight: 500; }
+
+        /* ---- Mobile ---- */
+        @media (max-width:600px) {
+            .main { padding: 10px; }
             .price-bar { grid-template-columns: 1fr 1fr; }
             .signal-meta { grid-template-columns: 1fr 1fr; }
             .indicators-grid { grid-template-columns: 1fr; }
             .signal-grid { grid-template-columns: repeat(4,1fr); }
-            .phase-timer { font-size:18px; }
+            .phase-timer { font-size: 20px; }
+            .header { padding: 10px 12px; }
+            .clock { display: none; }
+            .card { padding: 14px; }
         }
-        @media (max-width:360px) {
+        @media (max-width:400px) {
             .signal-grid { grid-template-columns: repeat(3,1fr); }
             .price-bar { grid-template-columns: 1fr 1fr; }
+            .price-tile.price-main .value { font-size: 20px; }
         }
     </style>
 </head>
 <body>
 
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">Connecting to XAUUSD Signal Engine...</div>
+</div>
+
+<!-- Header -->
 <div class="header">
-    <div>
-        <div class="logo">XAUUSD <small>M15 Signal Engine</small></div>
+    <div class="logo-group">
+        <div class="logo-icon">Au</div>
+        <div class="logo-text">XAUUSD<small>M15 Signal Engine</small></div>
     </div>
-    <div class="status-badges">
-        <div id="derivStatus" class="badge disconnected">
-            <span class="dot pulse"></span><span>Deriv</span>
-        </div>
-        <div id="serverStatus" class="badge connecting">
-            <span class="dot pulse"></span><span>Connecting...</span>
+    <div class="header-right">
+        <div class="clock" id="liveClock">--:--:--</div>
+        <div class="status-badges">
+            <div id="derivStatus" class="badge disconnected">
+                <span class="dot pulse"></span><span>Deriv</span>
+            </div>
+            <div id="serverStatus" class="badge connecting">
+                <span class="dot pulse"></span><span>Connecting...</span>
+            </div>
         </div>
     </div>
 </div>
 
+<!-- Main Content -->
 <div class="main">
 
     <!-- Live Price Bar -->
     <div class="price-bar">
         <div class="price-tile price-main">
-            <div class="label">XAUUSD</div>
+            <div class="label">XAUUSD Live</div>
             <div class="value" id="livePrice">--</div>
-            <div class="price-change neutral" id="priceChange" style="font-size:10px;margin-top:2px;">--</div>
+            <div class="price-change neutral" id="priceChange">--</div>
         </div>
         <div class="price-tile">
-            <div class="label">Open</div>
+            <div class="label">Open Price</div>
             <div class="value" id="openPrice">--</div>
         </div>
         <div class="price-tile">
@@ -325,11 +520,11 @@
         </div>
     </div>
 
-    <!-- Phase + Chart -->
+    <!-- Chart + Phase -->
     <div class="card">
         <div class="chart-header">
-            <div>
-                <div style="font-size:13px;font-weight:700;color:var(--text-primary);">XAUUSD Binary</div>
+            <div class="chart-info">
+                <div class="chart-title">XAUUSD Price Chart</div>
                 <div class="chart-win-label" id="chartWindowTime">--:-- - --:--</div>
             </div>
             <div id="chartSignalBadge" class="chart-signal-badge pending">PENDING</div>
@@ -337,7 +532,7 @@
         <div class="chart-container">
             <canvas id="priceChart"></canvas>
         </div>
-        <div style="margin-top:10px;">
+        <div style="margin-top:14px;">
             <div class="phase-bar">
                 <div class="phase-seg collection" id="phaseCollection"></div>
                 <div class="phase-seg analysis" id="phaseAnalysis"></div>
@@ -356,7 +551,7 @@
         </div>
     </div>
 
-    <!-- Indicators: Momentum + Trend + Score -->
+    <!-- Indicators: Momentum + Trend -->
     <div class="indicators-grid">
         <div class="card" style="margin-bottom:0;">
             <div class="card-title">Tick Momentum</div>
@@ -414,8 +609,8 @@
             <span class="indicator-label">Price Dir (+/-1)</span>
             <span class="indicator-value neutral" id="scorePrice">0</span>
         </div>
-        <div style="margin-top:8px;font-size:10px;color:var(--text-muted);text-align:center;">
-            CALL &ge; +3 &nbsp;|&nbsp; PUT &le; -3 &nbsp;|&nbsp; Otherwise: Fallback
+        <div class="score-legend">
+            CALL &ge; +3 &nbsp;&bull;&nbsp; PUT &le; -3 &nbsp;&bull;&nbsp; Otherwise: Fallback
         </div>
     </div>
 
@@ -431,29 +626,31 @@
             </div>
         </div>
         <div class="signal-grid" id="signalGrid">
-            <div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:16px;font-size:12px;">
-                No signals yet. First signal at minute 5.
+            <div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:20px;font-size:12px;">
+                No signals yet. Waiting for signal generation...
             </div>
         </div>
     </div>
 
-    <!-- Signal History + Tick Log -->
+    <!-- Signal History -->
     <div class="card">
         <div class="card-title">Signal History</div>
         <div class="history-list" id="signalHistory">
-            <div style="color:var(--text-muted);font-size:12px;text-align:center;padding:20px 0;">No signals generated yet</div>
+            <div style="color:var(--text-muted);font-size:12px;text-align:center;padding:24px 0;">No signals generated yet</div>
         </div>
     </div>
+
+    <!-- Tick Log -->
     <div class="card">
         <div class="card-title">Recent Ticks</div>
         <div class="tick-log" id="tickLog">
-            <div style="color:var(--text-muted);text-align:center;padding:16px 0;">Waiting for ticks...</div>
+            <div style="color:var(--text-muted);text-align:center;padding:20px 0;">Waiting for ticks...</div>
         </div>
     </div>
 
 </div>
 
-<div class="footer">XAUUSD M15 Signal Engine | Deriv WebSocket API | 24/7 Real-Time Analysis</div>
+<div class="footer">XAUUSD M15 Signal Engine &bull; Deriv WebSocket API &bull; Real-Time Analysis</div>
 
 <script>
 (function() {
@@ -475,10 +672,27 @@
     var windowStartE = 0;
     var windowExpiryE = 0;
     var windowStarted = false;
+    var dataReceived = false;
 
     function $(id) { return document.getElementById(id); }
 
-    // ── Connection status ──────────────────────────────────────────────
+    // ---- Live Clock ----
+    function updateClock() {
+        var now = new Date();
+        $('liveClock').textContent = now.toLocaleTimeString('en-US', { hour12: false });
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // ---- Loading Overlay ----
+    function hideLoading() {
+        if (!dataReceived) {
+            dataReceived = true;
+            $('loadingOverlay').classList.add('hidden');
+        }
+    }
+
+    // ---- Connection status ----
     function setServerStatus(state) {
         var el = $('serverStatus');
         var labels = { connected: 'Server', disconnected: 'Offline', connecting: 'Connecting...' };
@@ -491,21 +705,21 @@
         el.innerHTML = '<span class="dot' + (connected ? '' : ' pulse') + '"></span><span>Deriv</span>';
     }
 
-    // ── Price ──────────────────────────────────────────────────────────
+    // ---- Price ----
     function updatePrice(price) {
         $('livePrice').textContent = price.toFixed(2);
         if (prevPrice !== null) {
             var diff = price - prevPrice;
             var pct = (diff / prevPrice * 100).toFixed(3);
             var cls = diff > 0 ? 'up' : diff < 0 ? 'down' : 'neutral';
-            var arrow = diff > 0 ? '▲' : diff < 0 ? '▼' : '–';
+            var arrow = diff > 0 ? '+' : diff < 0 ? '' : '';
             $('priceChange').className = 'price-change ' + cls;
-            $('priceChange').textContent = arrow + ' ' + (diff >= 0 ? '+' : '') + diff.toFixed(2) + ' (' + pct + '%)';
+            $('priceChange').textContent = arrow + diff.toFixed(2) + ' (' + pct + '%)';
         }
         prevPrice = price;
     }
 
-    // ── Phase ──────────────────────────────────────────────────────────
+    // ---- Phase ----
     function updatePhase(data) {
         if (!data) return;
         var phaseMap = {
@@ -524,7 +738,6 @@
         $('windowIndex').textContent = 'Window #' + (data.windowIndex || 0);
         $('windowRemaining').textContent = Math.ceil(rem) + 's';
 
-        var segs = ['Collection', 'Analysis', 'Signal', 'Hold'];
         var segIds = ['phaseCollection', 'phaseAnalysis', 'phaseSignal', 'phaseHold'];
         var baseCls = ['collection', 'analysis', 'signal', 'hold'];
         segIds.forEach(function(id, i) {
@@ -554,14 +767,14 @@
         $('bufferBar').style.width = (buf / BUFFER_SIZE * 100) + '%';
     }
 
-    // ── Spike ──────────────────────────────────────────────────────────
+    // ---- Spike ----
     function updateSpike(inSpike) {
         var el = $('spikeStatus');
         el.className = 'spike-badge ' + (inSpike ? 'active' : 'clear');
-        el.textContent = inSpike ? '⚡ Spike' : 'No Spike';
+        el.textContent = inSpike ? 'Spike Detected' : 'No Spike';
     }
 
-    // ── Indicators ────────────────────────────────────────────────────
+    // ---- Indicators ----
     function updateIndicators(data) {
         if (!data) return;
         var mom = data.momentum;
@@ -602,16 +815,16 @@
         }
     }
 
-    // ── Price direction ───────────────────────────────────────────────
+    // ---- Price direction ----
     function updatePriceDir(priceStart, priceNow) {
         if (priceStart === null || priceNow === null) return;
         var el = $('priceDir');
-        if (priceNow > priceStart) { el.textContent = '▲ BULLISH'; el.style.color = 'var(--green)'; }
-        else if (priceNow < priceStart) { el.textContent = '▼ BEARISH'; el.style.color = 'var(--red)'; }
-        else { el.textContent = '– FLAT'; el.style.color = 'var(--text-muted)'; }
+        if (priceNow > priceStart) { el.textContent = 'BULLISH'; el.style.color = 'var(--green)'; }
+        else if (priceNow < priceStart) { el.textContent = 'BEARISH'; el.style.color = 'var(--red)'; }
+        else { el.textContent = 'FLAT'; el.style.color = 'var(--text-muted)'; }
     }
 
-    // ── Signal card ───────────────────────────────────────────────────
+    // ---- Signal card ----
     function emitSignal(data) {
         var sig = data.signal.toLowerCase();
         var card = $('signalCard');
@@ -664,10 +877,10 @@
         chartTicks = [];
     }
 
-    // ── History ───────────────────────────────────────────────────────
+    // ---- History ----
     function renderHistory() {
         if (signalHistoryArr.length === 0) {
-            $('signalHistory').innerHTML = '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:20px 0;">No signals generated yet</div>';
+            $('signalHistory').innerHTML = '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:24px 0;">No signals generated yet</div>';
             return;
         }
         $('signalHistory').innerHTML = signalHistoryArr.slice(0, 30).map(function(h) {
@@ -682,11 +895,11 @@
         }).join('');
     }
 
-    // ── Signal Grid ───────────────────────────────────────────────────
+    // ---- Signal Grid ----
     function renderGrid() {
         evaluateOutcomes();
         if (gridSignals.length === 0) {
-            $('signalGrid').innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:16px;font-size:12px;">No signals yet. First signal at minute 5.</div>';
+            $('signalGrid').innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:20px;font-size:12px;">No signals yet. Waiting for signal generation...</div>';
             return;
         }
         var cells = gridSignals.slice(0, 48).map(function(gs, ci) {
@@ -732,7 +945,7 @@
         $('totalCount').textContent = gridSignals.length;
     }
 
-    // ── Tick log ──────────────────────────────────────────────────────
+    // ---- Tick log ----
     function addTickLog(price, epoch, isSpike) {
         var t = new Date(epoch * 1000).toLocaleTimeString('en-US', {hour12: false});
         recentTicks.unshift({ price: price, time: t, isSpike: isSpike });
@@ -742,7 +955,7 @@
         }).join('');
     }
 
-    // ── Chart ─────────────────────────────────────────────────────────
+    // ---- Chart ----
     function initChart() {
         var canvas = $('priceChart');
         var container = canvas.parentElement;
@@ -759,17 +972,22 @@
         var dpr = window.devicePixelRatio || 1;
         var w = canvas.width, h = canvas.height;
         ctx.clearRect(0, 0, w, h);
-        ctx.fillStyle = '#0d1117'; ctx.fillRect(0, 0, w, h);
+
+        var bgGrad = ctx.createLinearGradient(0, 0, 0, h);
+        bgGrad.addColorStop(0, '#0d1220');
+        bgGrad.addColorStop(1, '#0b0f19');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, w, h);
 
         if (chartTicks.length < 2 || !windowStarted) {
             ctx.fillStyle = '#64748b';
-            ctx.font = (12 * dpr) + 'px system-ui,sans-serif';
+            ctx.font = (12 * dpr) + 'px Inter,system-ui,sans-serif';
             ctx.textAlign = 'center';
             ctx.fillText('Waiting for tick data...', w / 2, h / 2);
             return;
         }
 
-        var pad = { top: 16 * dpr, right: 60 * dpr, bottom: 24 * dpr, left: 10 * dpr };
+        var pad = { top: 18 * dpr, right: 64 * dpr, bottom: 26 * dpr, left: 12 * dpr };
         var cW = w - pad.left - pad.right;
         var cH = h - pad.top - pad.bottom;
         var tS = windowStartE, tE = windowExpiryE;
@@ -781,23 +999,28 @@
         function tX(ep) { return pad.left + ((ep - tS) / (tE - tS)) * cW; }
         function pY(p) { return pad.top + (1 - (p - mn) / pr) * cH; }
 
-        ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 1;
-        ctx.font = (9 * dpr) + 'px system-ui,sans-serif';
+        ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+        ctx.lineWidth = 1;
+        ctx.font = (9 * dpr) + 'px JetBrains Mono,monospace';
         for (var gi = 0; gi <= 4; gi++) {
             var gp = mn + (gi / 4) * pr, gy = pY(gp);
             ctx.beginPath(); ctx.moveTo(pad.left, gy); ctx.lineTo(w - pad.right, gy); ctx.stroke();
-            ctx.textAlign = 'right'; ctx.fillStyle = '#64748b';
-            ctx.fillText(gp.toFixed(2), w - 3 * dpr, gy + 3 * dpr);
+            ctx.textAlign = 'right'; ctx.fillStyle = '#475569';
+            ctx.fillText(gp.toFixed(2), w - 4 * dpr, gy + 3 * dpr);
         }
 
         var tN = Date.now() / 1000;
         if (tN < tE) {
             var fX = tX(Math.max(tN, tS));
-            ctx.fillStyle = 'rgba(255,255,255,0.02)';
+            ctx.fillStyle = 'rgba(255,255,255,0.015)';
             ctx.fillRect(fX, pad.top, w - pad.right - fX, cH);
         }
 
-        ctx.beginPath(); ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2 * dpr; ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.strokeStyle = '#10b981';
+        ctx.lineWidth = 2 * dpr;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
         chartTicks.forEach(function(t, i) {
             var x = tX(t.epoch), y = pY(t.price);
             if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
@@ -813,20 +1036,23 @@
             ctx.lineTo(tX(chartTicks[0].epoch), h - pad.bottom);
             ctx.closePath();
             var grad = ctx.createLinearGradient(0, pad.top, 0, h - pad.bottom);
-            grad.addColorStop(0, 'rgba(34,197,94,0.12)');
-            grad.addColorStop(1, 'rgba(34,197,94,0.01)');
-            ctx.fillStyle = grad; ctx.fill();
+            grad.addColorStop(0, 'rgba(16,185,129,0.15)');
+            grad.addColorStop(1, 'rgba(16,185,129,0.01)');
+            ctx.fillStyle = grad;
+            ctx.fill();
         }
 
         if (chartSignalEntry !== null) {
-            var sx = tX(chartSignalEntry.epoch), sy = pY(chartSignalEntry.price);
+            var sy = pY(chartSignalEntry.price);
             var isCall = currentSignalStr === 'CALL';
-            var sc = isCall ? '#22c55e' : '#ef4444';
+            var sc = isCall ? '#10b981' : '#f43f5e';
             ctx.beginPath(); ctx.strokeStyle = sc; ctx.lineWidth = 1.5 * dpr;
             ctx.setLineDash([5 * dpr, 4 * dpr]);
             ctx.moveTo(pad.left, sy); ctx.lineTo(w - pad.right, sy); ctx.stroke();
             ctx.setLineDash([]);
-            var as = 14 * dpr;
+
+            var sx = tX(chartSignalEntry.epoch);
+            var as = 12 * dpr;
             ctx.fillStyle = sc;
             if (isCall) {
                 ctx.beginPath(); ctx.moveTo(sx, sy - as); ctx.lineTo(sx - as * 0.4, sy); ctx.lineTo(sx + as * 0.4, sy); ctx.closePath(); ctx.fill();
@@ -839,15 +1065,16 @@
             var cl = chartTicks[chartTicks.length - 1];
             var cx = tX(cl.epoch), cy = pY(cl.price);
             ctx.beginPath(); ctx.arc(cx, cy, 4 * dpr, 0, Math.PI * 2);
-            ctx.fillStyle = '#22c55e'; ctx.fill();
-            ctx.beginPath(); ctx.arc(cx, cy, 6 * dpr, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(34,197,94,0.4)'; ctx.lineWidth = 2 * dpr; ctx.stroke();
+            ctx.fillStyle = '#10b981'; ctx.fill();
+            ctx.beginPath(); ctx.arc(cx, cy, 7 * dpr, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(16,185,129,0.35)'; ctx.lineWidth = 2 * dpr; ctx.stroke();
         }
     }
 
-    // ── Init from server state ─────────────────────────────────────────
+    // ---- Init from server state ----
     function applyInitState(state, history) {
         if (!state) return;
+        hideLoading();
         setDerivStatus(state.derivConnected);
         if (state.price) updatePrice(state.price);
         if (state.indicators) updateIndicators(state.indicators);
@@ -895,7 +1122,7 @@
         }
     }
 
-    // ── WebSocket ──────────────────────────────────────────────────────
+    // ---- WebSocket ----
     var ws = null;
     var reconnectTimer = null;
 
@@ -934,6 +1161,7 @@
                 break;
 
             case 'tick':
+                hideLoading();
                 updatePrice(msg.price);
                 updatePhase({
                     phase: msg.phase,
@@ -965,9 +1193,6 @@
                     trend: msg.trend,
                     score: msg.score,
                 });
-                if (msg.trend && prevPrice !== null) {
-                    // priceDir updated from tick message
-                }
                 break;
 
             case 'signal':
@@ -999,7 +1224,7 @@
         }
     }
 
-    // ── Timers ─────────────────────────────────────────────────────────
+    // ---- Timers ----
     setInterval(function() {
         drawChart();
         evaluateOutcomes();
@@ -1008,6 +1233,9 @@
     window.addEventListener('resize', function() {
         initChart();
     });
+
+    // Auto-hide loading after 10s fallback
+    setTimeout(function() { hideLoading(); }, 10000);
 
     initChart();
     renderGrid();
