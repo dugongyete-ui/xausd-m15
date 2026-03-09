@@ -33,6 +33,10 @@ connected_clients: set[web.WebSocketResponse] = set()
 signal_history: list[dict] = []
 MAX_HISTORY = 50
 
+# Store recent ticks so new/reconnecting clients get chart history
+tick_history: list[dict] = []
+MAX_TICK_HISTORY = 2000
+
 engine_state: dict = {
     "phase": "data_collection",
     "remaining": 900,
@@ -127,6 +131,10 @@ class WebSignalEngine:
 
                     # Always add to tick buffer for EMA calculations
                     self.tick_buffer.append(price, epoch)
+
+                    # Store ticks within current window for chart history
+                    if epoch >= window_start:
+                        tick_history.append({"price": price, "epoch": epoch})
 
                     # Only add to aggregator if within current window
                     if epoch >= window_start:
@@ -247,6 +255,12 @@ class WebSignalEngine:
         is_valid = self.spike_filter.check(price)
         self.tick_buffer.append(price, epoch)
         self.tick_aggregator.on_tick(price, is_valid)
+
+        # Store tick for chart history (sent to new/reconnecting clients)
+        tick_history.append({"price": price, "epoch": epoch})
+        if len(tick_history) > MAX_TICK_HISTORY:
+            # Downsample: keep every other tick to reduce memory
+            tick_history[:] = tick_history[::2]
 
         phase = self.window_engine.phase
         engine_state["phase"] = phase.value
@@ -411,6 +425,9 @@ class WebSignalEngine:
         engine_state["indicators"] = None
         engine_state["inSpike"] = False
 
+        # Clear tick history for the new window
+        tick_history.clear()
+
         await broadcast({
             "type": "windowReset",
             "windowIndex": self.window_engine.window_index,
@@ -433,6 +450,7 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
             "type": "init",
             "state": engine_state,
             "history": signal_history,
+            "tickHistory": tick_history,
         }))
 
         async for msg in ws:
