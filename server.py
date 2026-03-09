@@ -181,13 +181,17 @@ class WebSignalEngine:
                     indicators = self._compute_indicators()
                     engine_state["indicators"] = indicators
 
-                # If past signal generation and no signal yet, generate now
-                if phase in (WindowPhase.SIGNAL_GENERATION, WindowPhase.HOLD):
-                    if not self._signal_emitted:
-                        await self._generate_signal()
+                # Adaptive check: generate signal from historical data if conditions are met
+                elapsed = self.window_engine.elapsed
+                tick_count = self.tick_aggregator.tick_count
+                if not self._signal_emitted and elapsed >= SIGNAL_MIN_ELAPSED and tick_count >= SIGNAL_MIN_TICKS:
+                    score = self._quick_score()
+                    if abs(score) >= SIGNAL_SCORE_THRESHOLD or elapsed >= SIGNAL_FORCE_ELAPSED:
+                        trigger = "timeout" if elapsed >= SIGNAL_FORCE_ELAPSED else "market"
+                        await self._generate_signal(trigger=trigger)
                         logger.info(
-                            "Signal generated immediately from historical data (phase: %s)",
-                            phase.value,
+                            "Signal generated from historical data: elapsed=%.0fs score=%+d trigger=%s",
+                            elapsed, score, trigger,
                         )
 
         except Exception as e:
@@ -300,8 +304,7 @@ class WebSignalEngine:
             "bufferCount": len(self.tick_buffer),
         })
 
-        # Compute indicators in analysis, signal gen, AND hold phases
-        # (hold included for mid-window starts with pre-loaded data)
+        # Compute indicators once we have enough data
         if phase in (WindowPhase.ANALYSIS, WindowPhase.SIGNAL_GENERATION, WindowPhase.HOLD):
             indicators = self._compute_indicators()
             engine_state["indicators"] = indicators
@@ -322,9 +325,8 @@ class WebSignalEngine:
                 )
                 await self._generate_signal()
 
-        # Generate signal in both SIGNAL_GENERATION and HOLD phases
-        # (hold included for mid-window starts where minute 5 was missed)
-        if phase in (WindowPhase.SIGNAL_GENERATION, WindowPhase.HOLD) and not self._signal_emitted:
+        # Generate signal in HOLD phase (timeout fallback)
+        if phase is WindowPhase.HOLD and not self._signal_emitted:
             await self._generate_signal()
 
     def _compute_indicators(self) -> dict:

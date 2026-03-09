@@ -3,11 +3,13 @@
 Manages the 15-minute (900-second) window lifecycle with four distinct phases:
 
   Phase 1 -- Data Collection   (0-3 min)
-  Phase 2 -- Analysis          (3-5 min)
-  Phase 3 -- Signal Generation (minute 5)
-  Phase 4 -- Window Hold       (5-15 min)
+  Phase 2 -- Analysis          (3-12 min, signal generated when market is ready)
+  Phase 3 -- Signal Generation (brief moment when signal is emitted)
+  Phase 4 -- Window Hold       (after signal generated until window end)
 
 Windows are aligned to real clock boundaries (:00, :15, :30, :45).
+Signal generation is market-driven — it fires when indicators converge,
+not at a fixed time. Hard timeout at 12 minutes forces a signal if none yet.
 """
 
 from __future__ import annotations
@@ -19,15 +21,16 @@ import time
 logger = logging.getLogger(__name__)
 
 WINDOW_DURATION = 900  # seconds
+SIGNAL_TIMEOUT = 720   # 12 minutes — hard deadline for signal generation
 
 
 class WindowPhase(enum.Enum):
     """Phases within a 15-minute window."""
 
     DATA_COLLECTION = "data_collection"  # 0 – 180 s
-    ANALYSIS = "analysis"                # 180 – 300 s
-    SIGNAL_GENERATION = "signal_generation"  # 300 – 305 s
-    HOLD = "hold"                        # 305 – 900 s
+    ANALYSIS = "analysis"                # 180 – 720 s (market-driven)
+    SIGNAL_GENERATION = "signal_generation"  # brief moment when signal fires
+    HOLD = "hold"                        # after signal or 720 s+
 
 
 # Minimum elapsed seconds before an early signal can be generated
@@ -74,15 +77,17 @@ class WindowEngine:
 
     @property
     def phase(self) -> WindowPhase:
-        """Return the current phase based on elapsed time."""
+        """Return the current phase based on elapsed time.
+
+        Signal generation is market-driven — the SIGNAL_GENERATION phase
+        is set externally by the server when a signal is actually emitted.
+        Time-based fallback: HOLD after 12 minutes.
+        """
         elapsed = self.elapsed
         if elapsed < 180:
             return WindowPhase.DATA_COLLECTION
-        if elapsed < 300:
+        if elapsed < SIGNAL_TIMEOUT:
             return WindowPhase.ANALYSIS
-        if elapsed < 305:
-            # A small tolerance window around minute 5 for signal generation.
-            return WindowPhase.SIGNAL_GENERATION
         return WindowPhase.HOLD
 
     @property
