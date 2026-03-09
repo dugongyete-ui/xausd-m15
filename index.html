@@ -879,7 +879,7 @@
         $('chartSignalBadge').className = 'chart-signal-badge ' + sig;
         $('chartSignalBadge').textContent = data.signal;
         currentSignalStr = data.signal;
-        chartSignalEntry = { price: data.entryPrice, epoch: Date.now() / 1000 };
+        chartSignalEntry = { price: data.entryPrice, epoch: data.time || (Date.now() / 1000) };
 
         var nowMs = Date.now();
         var rec = {
