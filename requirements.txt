@@ -1,2 +1,4 @@
 websockets>=12.0
 aiohttp
+aiohttp
+websockets

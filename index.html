@@ -95,6 +95,18 @@
         .badge.connected { background: var(--green-dim); color: var(--green); border-color: rgba(16,185,129,0.2); }
         .badge.disconnected { background: var(--red-dim); color: var(--red); border-color: rgba(244,63,94,0.2); }
         .badge.connecting { background: var(--yellow-dim); color: var(--yellow); border-color: rgba(245,158,11,0.2); }
+        .badge.market-closed { background: rgba(99,102,241,0.12); color: #818cf8; border-color: rgba(99,102,241,0.2); }
+        .market-closed-banner {
+            display: none; align-items: center; justify-content: center; gap: 10px;
+            background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.2);
+            border-radius: var(--radius); padding: 14px 18px; margin-bottom: 12px;
+            color: #818cf8; font-size: 13px; font-weight: 600;
+        }
+        .market-closed-banner.visible { display: flex; }
+        .market-closed-banner .mc-icon { font-size: 20px; }
+        .market-closed-banner .mc-text { display: flex; flex-direction: column; gap: 2px; }
+        .market-closed-banner .mc-title { font-weight: 700; font-size: 14px; }
+        .market-closed-banner .mc-sub { font-size: 11px; color: var(--text-muted); font-weight: 400; }
         .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
         .dot.pulse { animation: pulse 1.5s ease-in-out infinite; }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
@@ -461,6 +473,9 @@
     <div class="header-right">
         <div class="clock" id="liveClock">--:--:--</div>
         <div class="status-badges">
+            <div id="marketClosedBadge" class="badge market-closed" style="display:none">
+                <span class="dot"></span><span>Market Closed</span>
+            </div>
             <div id="derivStatus" class="badge disconnected">
                 <span class="dot pulse"></span><span>Deriv</span>
             </div>
@@ -473,6 +488,15 @@
 
 <!-- Main Content -->
 <div class="main">
+
+    <!-- Market Closed Banner -->
+    <div class="market-closed-banner" id="marketClosedBanner">
+        <div class="mc-icon">&#128274;</div>
+        <div class="mc-text">
+            <div class="mc-title">Market is Currently Closed</div>
+            <div class="mc-sub" id="marketClosedSub">Engine is running in standby &mdash; will resume automatically when market opens.</div>
+        </div>
+    </div>
 
     <!-- Live Price Bar -->
     <div class="price-bar">
@@ -703,6 +727,20 @@
         var el = $('derivStatus');
         el.className = 'badge ' + (connected ? 'connected' : 'disconnected');
         el.innerHTML = '<span class="dot' + (connected ? '' : ' pulse') + '"></span><span>Deriv</span>';
+    }
+    function setMarketClosed(closed, message) {
+        var badge = $('marketClosedBadge');
+        var banner = $('marketClosedBanner');
+        var sub = $('marketClosedSub');
+        if (closed) {
+            badge.style.display = 'inline-flex';
+            banner.classList.add('visible');
+            if (message) sub.textContent = message + ' — Engine in standby, will resume automatically.';
+        } else {
+            badge.style.display = 'none';
+            banner.classList.remove('visible');
+            sub.textContent = 'Engine is running in standby \u2014 will resume automatically when market opens.';
+        }
     }
 
     // ---- Price ----
@@ -1076,6 +1114,7 @@
         if (!state) return;
         hideLoading();
         setDerivStatus(state.derivConnected);
+        if (state.marketClosed !== undefined) setMarketClosed(state.marketClosed);
         if (state.price) updatePrice(state.price);
         if (state.indicators) updateIndicators(state.indicators);
 
@@ -1222,6 +1261,11 @@
 
             case 'derivStatus':
                 setDerivStatus(msg.connected);
+                if (msg.marketClosed !== undefined) setMarketClosed(msg.marketClosed);
+                break;
+
+            case 'marketStatus':
+                setMarketClosed(msg.closed, msg.message);
                 break;
         }
     }

@@ -26,6 +26,9 @@ DERIV_WS_URL = "wss://ws.derivws.com/websockets/v3?app_id=114791"
 SUBSCRIBE_PAYLOAD = json.dumps({"ticks": "frxXAUUSD", "subscribe": 1})
 PORT = 5000
 
+MARKET_CLOSED_RETRY_INTERVAL = 60.0
+NORMAL_BACKOFF_MAX = 30.0
+
 connected_clients: set[web.WebSocketResponse] = set()
 signal_history: list[dict] = []
 MAX_HISTORY = 50
@@ -42,6 +45,7 @@ engine_state: dict = {
     "tickCount": 0,
     "bufferCount": 0,
     "derivConnected": False,
+    "marketClosed": False,
     "indicators": None,
     "currentSignal": None,
     "inSpike": False,
@@ -99,6 +103,16 @@ class WebSignalEngine:
                 await ws.send(payload)
                 raw = await asyncio.wait_for(ws.recv(), timeout=10)
                 data = json.loads(raw)
+
+                if "error" in data:
+                    err = data["error"]
+                    if err.get("code") == "MarketIsClosed":
+                        engine_state["marketClosed"] = True
+                        logger.info("Market is closed during pre-load. Engine will standby.")
+                        await broadcast({"type": "marketStatus", "closed": True, "message": err.get("message", "Market closed")})
+                    else:
+                        logger.warning("API error during pre-load: %s", err)
+                    return
 
                 if "history" not in data:
                     logger.warning("No historical data received: %s", data)
@@ -171,15 +185,14 @@ class WebSignalEngine:
         await self._preload_historical_data()
 
         backoff = 1.0
-        max_backoff = 30.0
         while True:
             try:
                 logger.info("Connecting to Deriv WebSocket...")
                 engine_state["derivConnected"] = False
-                await broadcast({"type": "derivStatus", "connected": False})
+                await broadcast({"type": "derivStatus", "connected": False, "marketClosed": engine_state["marketClosed"]})
                 async with wsc.connect(DERIV_WS_URL) as ws:
                     engine_state["derivConnected"] = True
-                    await broadcast({"type": "derivStatus", "connected": True})
+                    await broadcast({"type": "derivStatus", "connected": True, "marketClosed": engine_state["marketClosed"]})
                     await ws.send(SUBSCRIBE_PAYLOAD)
                     logger.info("Subscribed to frxXAUUSD ticks.")
                     backoff = 1.0
@@ -187,19 +200,42 @@ class WebSignalEngine:
                         try:
                             data = json.loads(raw_msg)
                             if "tick" in data:
+                                # Market is open — clear closed flag if it was set
+                                if engine_state["marketClosed"]:
+                                    engine_state["marketClosed"] = False
+                                    logger.info("Market is now open. Resuming signal engine.")
+                                    await broadcast({"type": "marketStatus", "closed": False})
                                 price = float(data["tick"]["quote"])
                                 epoch = int(data["tick"]["epoch"])
                                 await self._on_tick(price, epoch)
                             elif "error" in data:
-                                logger.error("Deriv API error: %s", data["error"])
+                                err = data["error"]
+                                err_code = err.get("code", "")
+                                err_msg = err.get("message", str(err))
+                                if err_code == "MarketIsClosed":
+                                    if not engine_state["marketClosed"]:
+                                        engine_state["marketClosed"] = True
+                                        logger.info("Market is closed. Will retry in %.0fs.", MARKET_CLOSED_RETRY_INTERVAL)
+                                        await broadcast({"type": "marketStatus", "closed": True, "message": err_msg})
+                                    # Close WS so we retry after the interval
+                                    break
+                                else:
+                                    logger.error("Deriv API error: %s", err)
                         except Exception as e:
                             logger.error("Tick processing error: %s", e)
             except Exception as exc:
                 logger.warning("WS disconnected: %s -- reconnecting in %.1fs", exc, backoff)
                 engine_state["derivConnected"] = False
-                await broadcast({"type": "derivStatus", "connected": False})
+                await broadcast({"type": "derivStatus", "connected": False, "marketClosed": engine_state["marketClosed"]})
+
+            if engine_state["marketClosed"]:
+                # When market is closed, poll every 60s instead of aggressive backoff
+                logger.info("Market closed — waiting %.0fs before next check...", MARKET_CLOSED_RETRY_INTERVAL)
+                await asyncio.sleep(MARKET_CLOSED_RETRY_INTERVAL)
+                backoff = 1.0
+            else:
                 await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, max_backoff)
+                backoff = min(backoff * 2, NORMAL_BACKOFF_MAX)
 
     async def _on_tick(self, price: float, epoch: int) -> None:
         if self.window_engine.window_index == 0:
