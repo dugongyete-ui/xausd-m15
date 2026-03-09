@@ -2,9 +2,24 @@
 
 Advanced real-time signal generation system for the **XAUUSD (Gold)** trading pair using the Deriv WebSocket API with a 15-minute window architecture.
 
+## Web Dashboard
+
+Open `index.html` in any modern browser to launch the real-time signal dashboard. No server required — the browser connects directly to the Deriv WebSocket API.
+
+The dashboard displays:
+- **Live gold price** with tick-by-tick updates
+- **Window phase progress** with countdown timer
+- **Momentum analysis** with visual bar and uptick/downtick counts
+- **EMA-20 / EMA-50 trend indicators** with crossover detection
+- **Scoring breakdown** showing each component's contribution
+- **Current signal** (CALL / PUT) with entry price and expiry
+- **Signal history** log of all generated signals
+- **Recent tick log** with spike detection markers
+
 ## Features
 
 - **Real-time tick processing** via Deriv WebSocket (`frxXAUUSD`)
+- **Web-based dashboard** — no installation needed, runs in the browser
 - **Anti-spike filter** to handle gold's characteristic sudden price spikes
 - **15-minute window engine** with four distinct phases (Collection → Analysis → Signal → Hold)
 - **Tick momentum analysis** (uptick/downtick ratio)

@@ -1,0 +1,1328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XAUUSD M15 Signal Engine</title>
+    <style>
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-secondary: #111827;
+            --bg-card: #1a2332;
+            --bg-card-hover: #1f2b3d;
+            --border: #2a3a50;
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-green: #22c55e;
+            --accent-green-dim: rgba(34, 197, 94, 0.15);
+            --accent-red: #ef4444;
+            --accent-red-dim: rgba(239, 68, 68, 0.15);
+            --accent-blue: #3b82f6;
+            --accent-blue-dim: rgba(59, 130, 246, 0.15);
+            --accent-yellow: #f59e0b;
+            --accent-yellow-dim: rgba(245, 158, 11, 0.15);
+            --accent-purple: #a855f7;
+            --gold: #fbbf24;
+            --gold-dim: rgba(251, 191, 36, 0.12);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, var(--bg-secondary), var(--bg-card));
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--gold);
+            letter-spacing: 1px;
+        }
+
+        .logo span {
+            color: var(--text-secondary);
+            font-weight: 400;
+            font-size: 14px;
+            margin-left: 8px;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .connection-status.connected {
+            background: var(--accent-green-dim);
+            color: var(--accent-green);
+        }
+
+        .connection-status.disconnected {
+            background: var(--accent-red-dim);
+            color: var(--accent-red);
+        }
+
+        .connection-status.connecting {
+            background: var(--accent-yellow-dim);
+            color: var(--accent-yellow);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .status-dot.pulse {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* Main Layout */
+        .main {
+            padding: 20px 24px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .grid-wide {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        @media (max-width: 768px) {
+            .grid-wide { grid-template-columns: 1fr; }
+            .main { padding: 12px; }
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            transition: border-color 0.2s;
+        }
+
+        .card:hover {
+            border-color: #3a4a60;
+        }
+
+        .card-title {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        /* Price Card */
+        .price-value {
+            font-size: 42px;
+            font-weight: 700;
+            color: var(--gold);
+            font-variant-numeric: tabular-nums;
+            line-height: 1.1;
+        }
+
+        .price-change {
+            font-size: 14px;
+            margin-top: 6px;
+            font-weight: 500;
+        }
+
+        .price-change.up { color: var(--accent-green); }
+        .price-change.down { color: var(--accent-red); }
+        .price-change.neutral { color: var(--text-muted); }
+
+        /* Signal Card */
+        .signal-card {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .signal-card.call {
+            border-color: var(--accent-green);
+            background: linear-gradient(135deg, var(--bg-card), rgba(34, 197, 94, 0.05));
+        }
+
+        .signal-card.put {
+            border-color: var(--accent-red);
+            background: linear-gradient(135deg, var(--bg-card), rgba(239, 68, 68, 0.05));
+        }
+
+        .signal-card.pending {
+            border-color: var(--accent-yellow);
+            background: linear-gradient(135deg, var(--bg-card), rgba(245, 158, 11, 0.03));
+        }
+
+        .signal-value {
+            font-size: 48px;
+            font-weight: 800;
+            letter-spacing: 3px;
+            line-height: 1.1;
+        }
+
+        .signal-value.call { color: var(--accent-green); }
+        .signal-value.put { color: var(--accent-red); }
+        .signal-value.pending { color: var(--accent-yellow); }
+
+        .signal-details {
+            margin-top: 12px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .signal-detail-item {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .signal-detail-item strong {
+            color: var(--text-primary);
+            display: block;
+            font-size: 14px;
+            margin-top: 2px;
+        }
+
+        /* Phase Card */
+        .phase-bar {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 12px;
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .phase-segment {
+            border-radius: 2px;
+            transition: background 0.3s;
+        }
+
+        .phase-segment.collection {
+            flex: 3;
+            background: var(--text-muted);
+        }
+
+        .phase-segment.analysis {
+            flex: 2;
+            background: var(--text-muted);
+        }
+
+        .phase-segment.signal {
+            flex: 0.5;
+            background: var(--text-muted);
+        }
+
+        .phase-segment.hold {
+            flex: 10;
+            background: var(--text-muted);
+        }
+
+        .phase-segment.active {
+            background: var(--accent-blue);
+            box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
+        }
+
+        .phase-segment.completed {
+            background: var(--accent-green);
+        }
+
+        .phase-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .phase-name {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--accent-blue);
+            text-transform: capitalize;
+        }
+
+        .phase-timer {
+            font-size: 24px;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            color: var(--text-primary);
+        }
+
+        .window-info {
+            margin-top: 10px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* Indicator Cards */
+        .indicator-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .indicator-row:last-child { border-bottom: none; }
+
+        .indicator-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .indicator-value {
+            font-size: 15px;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Momentum Bar */
+        .momentum-bar-container {
+            width: 100%;
+            height: 24px;
+            background: var(--bg-primary);
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+            margin: 12px 0;
+        }
+
+        .momentum-bar-fill {
+            height: 100%;
+            border-radius: 12px;
+            transition: width 0.5s ease, background 0.3s;
+            position: relative;
+        }
+
+        .momentum-bar-label {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 11px;
+            font-weight: 700;
+            color: white;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+        }
+
+        .momentum-center-line {
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: var(--text-muted);
+            z-index: 2;
+        }
+
+        /* Score Gauge */
+        .score-display {
+            text-align: center;
+            margin: 8px 0;
+        }
+
+        .score-value {
+            font-size: 56px;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .score-value.positive { color: var(--accent-green); }
+        .score-value.negative { color: var(--accent-red); }
+        .score-value.neutral { color: var(--text-muted); }
+
+        .score-breakdown {
+            margin-top: 12px;
+        }
+
+        .score-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .score-item-value {
+            font-weight: 600;
+        }
+
+        .score-item-value.positive { color: var(--accent-green); }
+        .score-item-value.negative { color: var(--accent-red); }
+        .score-item-value.neutral { color: var(--text-muted); }
+
+        /* Signal History */
+        .history-list {
+            max-height: 320px;
+            overflow-y: auto;
+        }
+
+        .history-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 12px;
+            margin-bottom: 6px;
+            background: var(--bg-primary);
+            border-radius: 8px;
+            border-left: 3px solid;
+        }
+
+        .history-item.call { border-color: var(--accent-green); }
+        .history-item.put { border-color: var(--accent-red); }
+
+        .history-signal {
+            font-weight: 700;
+            font-size: 14px;
+            min-width: 50px;
+        }
+
+        .history-signal.call { color: var(--accent-green); }
+        .history-signal.put { color: var(--accent-red); }
+
+        .history-price {
+            font-variant-numeric: tabular-nums;
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+
+        .history-meta {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-align: right;
+        }
+
+        /* Tick Log */
+        .tick-log {
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+            color: var(--text-secondary);
+            background: var(--bg-primary);
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        .tick-log-entry {
+            padding: 2px 0;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .tick-log-entry.spike {
+            color: var(--accent-red);
+            opacity: 0.6;
+        }
+
+        /* Buffer Info */
+        .buffer-bar {
+            width: 100%;
+            height: 6px;
+            background: var(--bg-primary);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .buffer-bar-fill {
+            height: 100%;
+            background: var(--accent-blue);
+            border-radius: 3px;
+            transition: width 0.3s;
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 16px;
+            color: var(--text-muted);
+            font-size: 12px;
+            border-top: 1px solid var(--border);
+            margin-top: 20px;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .signal-flash {
+            animation: signalFlash 0.6s ease;
+        }
+
+        @keyframes signalFlash {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        /* Spike indicator */
+        .spike-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .spike-indicator.active {
+            background: var(--accent-red-dim);
+            color: var(--accent-red);
+        }
+
+        .spike-indicator.clear {
+            background: var(--accent-green-dim);
+            color: var(--accent-green);
+        }
+    </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+    <div class="header-left">
+        <div class="logo">XAUUSD <span>M15 Signal Engine</span></div>
+    </div>
+    <div id="connectionStatus" class="connection-status disconnected">
+        <div class="status-dot"></div>
+        <span>Disconnected</span>
+    </div>
+</div>
+
+<!-- Main Content -->
+<div class="main">
+
+    <!-- Top Row: Price + Signal + Phase -->
+    <div class="grid">
+        <!-- Live Price -->
+        <div class="card">
+            <div class="card-title">Live Price</div>
+            <div class="price-value" id="livePrice">—</div>
+            <div class="price-change neutral" id="priceChange">Waiting for data…</div>
+            <div style="margin-top: 12px; display: flex; gap: 16px;">
+                <div>
+                    <div class="card-title" style="margin-bottom: 4px;">Window Open</div>
+                    <div id="windowOpenPrice" style="font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums;">—</div>
+                </div>
+                <div>
+                    <div class="card-title" style="margin-bottom: 4px;">Ticks</div>
+                    <div id="tickCount" style="font-size: 16px; font-weight: 600;">0</div>
+                </div>
+                <div>
+                    <div class="card-title" style="margin-bottom: 4px;">Buffer</div>
+                    <div id="bufferCount" style="font-size: 16px; font-weight: 600;">0 / 120</div>
+                </div>
+            </div>
+            <div class="buffer-bar">
+                <div class="buffer-bar-fill" id="bufferBar" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <!-- Current Signal -->
+        <div class="card signal-card pending" id="signalCard">
+            <div class="card-title">Current Signal</div>
+            <div class="signal-value pending" id="signalValue">PENDING</div>
+            <div class="signal-details" id="signalDetails">
+                <div class="signal-detail-item">
+                    Entry Price
+                    <strong id="entryPrice">—</strong>
+                </div>
+                <div class="signal-detail-item">
+                    Expiry Time
+                    <strong id="expiryTime">—</strong>
+                </div>
+                <div class="signal-detail-item">
+                    Score
+                    <strong id="signalScore">—</strong>
+                </div>
+                <div class="signal-detail-item">
+                    Fallback
+                    <strong id="signalFallback">—</strong>
+                </div>
+            </div>
+        </div>
+
+        <!-- Window Phase -->
+        <div class="card">
+            <div class="card-title">Window Phase</div>
+            <div class="phase-bar">
+                <div class="phase-segment collection" id="phaseCollection"></div>
+                <div class="phase-segment analysis" id="phaseAnalysis"></div>
+                <div class="phase-segment signal" id="phaseSignal"></div>
+                <div class="phase-segment hold" id="phaseHold"></div>
+            </div>
+            <div class="phase-info">
+                <div class="phase-name" id="phaseName">—</div>
+                <div class="phase-timer" id="phaseTimer">00:00</div>
+            </div>
+            <div class="window-info">
+                <span id="windowIndex">Window #0</span>
+                <span id="windowRemaining">—</span>
+            </div>
+            <div style="margin-top: 8px;">
+                <div id="spikeStatus" class="spike-indicator clear">
+                    <span>● No Spike</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Middle Row: Momentum + Trend + Score -->
+    <div class="grid">
+        <!-- Momentum -->
+        <div class="card">
+            <div class="card-title">Tick Momentum</div>
+            <div class="momentum-bar-container">
+                <div class="momentum-center-line"></div>
+                <div class="momentum-bar-fill" id="momentumBar" style="width: 50%; background: var(--text-muted);">
+                    <span class="momentum-bar-label" id="momentumLabel">50%</span>
+                </div>
+            </div>
+            <div class="indicator-row">
+                <span class="indicator-label">Bias</span>
+                <span class="indicator-value" id="momentumBias" style="color: var(--text-muted);">NEUTRAL</span>
+            </div>
+            <div class="indicator-row">
+                <span class="indicator-label">Upticks</span>
+                <span class="indicator-value" id="uptickCount">0</span>
+            </div>
+            <div class="indicator-row">
+                <span class="indicator-label">Downticks</span>
+                <span class="indicator-value" id="downtickCount">0</span>
+            </div>
+        </div>
+
+        <!-- Trend -->
+        <div class="card">
+            <div class="card-title">Trend Indicators</div>
+            <div class="indicator-row">
+                <span class="indicator-label">EMA-20</span>
+                <span class="indicator-value" id="ema20Value">—</span>
+            </div>
+            <div class="indicator-row">
+                <span class="indicator-label">EMA-50</span>
+                <span class="indicator-value" id="ema50Value">—</span>
+            </div>
+            <div class="indicator-row">
+                <span class="indicator-label">Trend Direction</span>
+                <span class="indicator-value" id="trendDirection" style="color: var(--text-muted);">NEUTRAL</span>
+            </div>
+            <div class="indicator-row">
+                <span class="indicator-label">Price Direction</span>
+                <span class="indicator-value" id="priceDirection" style="color: var(--text-muted);">—</span>
+            </div>
+        </div>
+
+        <!-- Score Breakdown -->
+        <div class="card">
+            <div class="card-title">Scoring System</div>
+            <div class="score-display">
+                <div class="score-value neutral" id="totalScore">0</div>
+            </div>
+            <div class="score-breakdown">
+                <div class="score-item">
+                    <span>Momentum (weight ±2)</span>
+                    <span class="score-item-value neutral" id="scoreMomentum">0</span>
+                </div>
+                <div class="score-item">
+                    <span>Trend EMA (weight ±1)</span>
+                    <span class="score-item-value neutral" id="scoreTrend">0</span>
+                </div>
+                <div class="score-item">
+                    <span>Price Direction (weight ±1)</span>
+                    <span class="score-item-value neutral" id="scorePrice">0</span>
+                </div>
+            </div>
+            <div style="margin-top: 8px; font-size: 12px; color: var(--text-muted); text-align: center;">
+                CALL ≥ +3 &nbsp;|&nbsp; PUT ≤ −3 &nbsp;|&nbsp; Otherwise → Fallback
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Row: Signal History + Tick Log -->
+    <div class="grid-wide">
+        <!-- Signal History -->
+        <div class="card">
+            <div class="card-title">Signal History</div>
+            <div class="history-list" id="signalHistory">
+                <div style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 24px 0;">
+                    No signals generated yet
+                </div>
+            </div>
+        </div>
+
+        <!-- Tick Log -->
+        <div class="card">
+            <div class="card-title">Recent Ticks</div>
+            <div class="tick-log" id="tickLog">
+                <div style="color: var(--text-muted); text-align: center; padding: 24px 0;">
+                    Waiting for ticks…
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Footer -->
+<div class="footer">
+    XAUUSD M15 Signal Engine &nbsp;•&nbsp; Deriv WebSocket API &nbsp;•&nbsp; Real-Time Analysis
+</div>
+
+<script>
+// =========================================================================
+// XAUUSD Real-Time Signal Engine — Browser Implementation
+// All 9 modules implemented in JavaScript
+// =========================================================================
+
+(function () {
+    'use strict';
+
+    // ── Constants ──────────────────────────────────────────────────────
+    const DERIV_WS_URL = 'wss://ws.derivws.com/websockets/v3?app_id=114791';
+    const BUFFER_SIZE = 120;
+    const WINDOW_DURATION = 900; // seconds
+    const SPIKE_THRESHOLD_PCT = 0.25;
+    const STABILISATION_TICKS = 3;
+    const BULLISH_THRESHOLD = 0.60;
+    const BEARISH_THRESHOLD = 0.40;
+    const CALL_THRESHOLD = 3;
+    const PUT_THRESHOLD = -3;
+
+    // Phase boundaries in seconds
+    const PHASE_COLLECTION_END = 180;
+    const PHASE_ANALYSIS_END = 300;
+    const PHASE_SIGNAL_END = 305;
+
+    // ── Module 2: Tick Buffer Manager ─────────────────────────────────
+    const tickBuffer = [];
+
+    function bufferAppend(price, epoch) {
+        tickBuffer.push({ price, epoch });
+        if (tickBuffer.length > BUFFER_SIZE) {
+            tickBuffer.shift();
+        }
+    }
+
+    function bufferPrices() {
+        return tickBuffer.map(t => t.price);
+    }
+
+    // ── Module 3: Anti-Spike Filter ───────────────────────────────────
+    const spikeFilter = {
+        lastValidPrice: null,
+        stableCount: 0,
+        inSpike: false,
+
+        check(price) {
+            if (this.lastValidPrice === null) {
+                this.lastValidPrice = price;
+                return true;
+            }
+
+            const pctChange = Math.abs(price - this.lastValidPrice) / this.lastValidPrice * 100;
+
+            if (pctChange > SPIKE_THRESHOLD_PCT) {
+                this.inSpike = true;
+                this.stableCount = 0;
+                return false;
+            }
+
+            if (this.inSpike) {
+                this.stableCount++;
+                if (this.stableCount >= STABILISATION_TICKS) {
+                    this.inSpike = false;
+                    this.stableCount = 0;
+                    this.lastValidPrice = price;
+                    return true;
+                }
+                this.lastValidPrice = price;
+                return true;
+            }
+
+            this.lastValidPrice = price;
+            return true;
+        },
+
+        reset() {
+            this.lastValidPrice = null;
+            this.stableCount = 0;
+            this.inSpike = false;
+        }
+    };
+
+    // ── Module 4: Window Time Engine ──────────────────────────────────
+    const windowEngine = {
+        windowStart: 0,
+        windowIndex: 0,
+        started: false,
+
+        start() {
+            this.windowStart = Date.now() / 1000;
+            this.windowIndex = 1;
+            this.started = true;
+        },
+
+        get elapsed() {
+            if (!this.started) return 0;
+            return Date.now() / 1000 - this.windowStart;
+        },
+
+        get phase() {
+            const e = this.elapsed;
+            if (e < PHASE_COLLECTION_END) return 'data_collection';
+            if (e < PHASE_ANALYSIS_END) return 'analysis';
+            if (e < PHASE_SIGNAL_END) return 'signal_generation';
+            return 'hold';
+        },
+
+        get windowExpiry() {
+            return this.windowStart + WINDOW_DURATION;
+        },
+
+        get remaining() {
+            return Math.max(0, WINDOW_DURATION - this.elapsed);
+        },
+
+        shouldReset() {
+            return this.elapsed >= WINDOW_DURATION;
+        },
+
+        reset() {
+            this.windowStart = Date.now() / 1000;
+            this.windowIndex++;
+        }
+    };
+
+    // ── Module 5: Tick Aggregation Engine ─────────────────────────────
+    const tickAggregator = {
+        priceStart: null,
+        priceNow: null,
+        tickCount: 0,
+        validPrices: [],
+
+        onTick(price, isValid) {
+            this.tickCount++;
+            if (this.priceStart === null) this.priceStart = price;
+            this.priceNow = price;
+            if (isValid) this.validPrices.push(price);
+        },
+
+        reset() {
+            this.priceStart = null;
+            this.priceNow = null;
+            this.tickCount = 0;
+            this.validPrices = [];
+        }
+    };
+
+    // ── Module 6: Momentum Analyzer ──────────────────────────────────
+    function computeMomentum() {
+        const prices = bufferPrices();
+        if (prices.length < 2) return { ratio: 0.5, bias: 'NEUTRAL', upticks: 0, downticks: 0 };
+
+        let upticks = 0, downticks = 0;
+        for (let i = 1; i < prices.length; i++) {
+            if (prices[i] > prices[i - 1]) upticks++;
+            else if (prices[i] < prices[i - 1]) downticks++;
+        }
+
+        const total = upticks + downticks;
+        if (total === 0) return { ratio: 0.5, bias: 'NEUTRAL', upticks: 0, downticks: 0 };
+
+        const ratio = upticks / total;
+        let bias;
+        if (ratio > BULLISH_THRESHOLD) bias = 'BULLISH';
+        else if (ratio < BEARISH_THRESHOLD) bias = 'BEARISH';
+        else bias = 'NEUTRAL';
+
+        return { ratio, bias, upticks, downticks };
+    }
+
+    // ── Module 7: Trend Indicator Engine ─────────────────────────────
+    function computeEMA(prices, period) {
+        if (prices.length < period) return null;
+        const multiplier = 2 / (period + 1);
+        let ema = 0;
+        for (let i = 0; i < period; i++) ema += prices[i];
+        ema /= period;
+        for (let i = period; i < prices.length; i++) {
+            ema = (prices[i] - ema) * multiplier + ema;
+        }
+        return ema;
+    }
+
+    function computeTrend() {
+        const prices = bufferPrices();
+        const ema20 = computeEMA(prices, 20);
+        const ema50 = computeEMA(prices, 50);
+
+        let direction;
+        if (ema20 === null || ema50 === null) direction = 'NEUTRAL';
+        else if (ema20 > ema50) direction = 'BULLISH';
+        else if (ema20 < ema50) direction = 'BEARISH';
+        else direction = 'NEUTRAL';
+
+        return { ema20, ema50, direction };
+    }
+
+    // ── Module 8 & 9: Signal Decision Engine + Fallback ──────────────
+    function evaluateSignal(momentumBias, trendDirection, priceStart, priceNow) {
+        let score = 0;
+        let scoreMomentum = 0, scoreTrend = 0, scorePrice = 0;
+
+        if (momentumBias === 'BULLISH') { score += 2; scoreMomentum = 2; }
+        else if (momentumBias === 'BEARISH') { score -= 2; scoreMomentum = -2; }
+
+        if (trendDirection === 'BULLISH') { score += 1; scoreTrend = 1; }
+        else if (trendDirection === 'BEARISH') { score -= 1; scoreTrend = -1; }
+
+        if (priceStart !== null && priceNow !== null) {
+            if (priceNow > priceStart) { score += 1; scorePrice = 1; }
+            else if (priceNow < priceStart) { score -= 1; scorePrice = -1; }
+        }
+
+        let signal, usedFallback = false;
+        if (score >= CALL_THRESHOLD) {
+            signal = 'CALL';
+        } else if (score <= PUT_THRESHOLD) {
+            signal = 'PUT';
+        } else {
+            // Fallback
+            signal = (priceNow !== null && priceStart !== null && priceNow > priceStart) ? 'CALL' : 'PUT';
+            usedFallback = true;
+        }
+
+        return { signal, score, usedFallback, scoreMomentum, scoreTrend, scorePrice };
+    }
+
+    // ── State ────────────────────────────────────────────────────────
+    let signalEmitted = false;
+    let currentSignal = null;
+    let signalHistory = [];
+    let recentTicks = [];
+    let ws = null;
+    let prevPrice = null;
+
+    // ── DOM References ───────────────────────────────────────────────
+    const dom = {
+        connectionStatus: document.getElementById('connectionStatus'),
+        livePrice: document.getElementById('livePrice'),
+        priceChange: document.getElementById('priceChange'),
+        windowOpenPrice: document.getElementById('windowOpenPrice'),
+        tickCount: document.getElementById('tickCount'),
+        bufferCount: document.getElementById('bufferCount'),
+        bufferBar: document.getElementById('bufferBar'),
+        signalCard: document.getElementById('signalCard'),
+        signalValue: document.getElementById('signalValue'),
+        entryPrice: document.getElementById('entryPrice'),
+        expiryTime: document.getElementById('expiryTime'),
+        signalScore: document.getElementById('signalScore'),
+        signalFallback: document.getElementById('signalFallback'),
+        phaseCollection: document.getElementById('phaseCollection'),
+        phaseAnalysis: document.getElementById('phaseAnalysis'),
+        phaseSignal: document.getElementById('phaseSignal'),
+        phaseHold: document.getElementById('phaseHold'),
+        phaseName: document.getElementById('phaseName'),
+        phaseTimer: document.getElementById('phaseTimer'),
+        windowIndex: document.getElementById('windowIndex'),
+        windowRemaining: document.getElementById('windowRemaining'),
+        spikeStatus: document.getElementById('spikeStatus'),
+        momentumBar: document.getElementById('momentumBar'),
+        momentumLabel: document.getElementById('momentumLabel'),
+        momentumBias: document.getElementById('momentumBias'),
+        uptickCount: document.getElementById('uptickCount'),
+        downtickCount: document.getElementById('downtickCount'),
+        ema20Value: document.getElementById('ema20Value'),
+        ema50Value: document.getElementById('ema50Value'),
+        trendDirection: document.getElementById('trendDirection'),
+        priceDirection: document.getElementById('priceDirection'),
+        totalScore: document.getElementById('totalScore'),
+        scoreMomentum: document.getElementById('scoreMomentum'),
+        scoreTrend: document.getElementById('scoreTrend'),
+        scorePrice: document.getElementById('scorePrice'),
+        signalHistory: document.getElementById('signalHistory'),
+        tickLog: document.getElementById('tickLog'),
+    };
+
+    // ── UI Update Functions ──────────────────────────────────────────
+    function setConnectionStatus(status) {
+        dom.connectionStatus.className = 'connection-status ' + status;
+        const labels = { connected: 'Connected', disconnected: 'Disconnected', connecting: 'Connecting…' };
+        const dotClass = status === 'connecting' ? 'status-dot pulse' : 'status-dot';
+        dom.connectionStatus.innerHTML = `<div class="${dotClass}"></div><span>${labels[status]}</span>`;
+    }
+
+    function updatePrice(price) {
+        dom.livePrice.textContent = price.toFixed(2);
+
+        if (prevPrice !== null) {
+            const diff = price - prevPrice;
+            const pct = (diff / prevPrice * 100).toFixed(3);
+            const cls = diff > 0 ? 'up' : diff < 0 ? 'down' : 'neutral';
+            const arrow = diff > 0 ? '▲' : diff < 0 ? '▼' : '–';
+            dom.priceChange.className = 'price-change ' + cls;
+            dom.priceChange.textContent = `${arrow} ${diff >= 0 ? '+' : ''}${diff.toFixed(2)} (${pct}%)`;
+        }
+        prevPrice = price;
+    }
+
+    function updateWindowInfo() {
+        dom.windowOpenPrice.textContent = tickAggregator.priceStart !== null ? tickAggregator.priceStart.toFixed(2) : '—';
+        dom.tickCount.textContent = tickAggregator.tickCount.toString();
+        dom.bufferCount.textContent = `${tickBuffer.length} / ${BUFFER_SIZE}`;
+        dom.bufferBar.style.width = `${(tickBuffer.length / BUFFER_SIZE) * 100}%`;
+    }
+
+    function updatePhase() {
+        if (!windowEngine.started) return;
+
+        const phase = windowEngine.phase;
+        const elapsed = windowEngine.elapsed;
+        const remaining = windowEngine.remaining;
+
+        // Phase name
+        const phaseNames = {
+            data_collection: 'Data Collection',
+            analysis: 'Analysis',
+            signal_generation: 'Signal Generation',
+            hold: 'Hold'
+        };
+        dom.phaseName.textContent = phaseNames[phase] || phase;
+
+        // Timer
+        const mins = Math.floor(remaining / 60);
+        const secs = Math.floor(remaining % 60);
+        dom.phaseTimer.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+        // Window info
+        dom.windowIndex.textContent = `Window #${windowEngine.windowIndex}`;
+        dom.windowRemaining.textContent = `${Math.ceil(remaining)}s remaining`;
+
+        // Phase bar segments
+        const segments = ['collection', 'analysis', 'signal', 'hold'];
+        const phases = ['data_collection', 'analysis', 'signal_generation', 'hold'];
+        const phaseOrder = phases.indexOf(phase);
+
+        segments.forEach((seg, i) => {
+            const el = document.getElementById('phase' + seg.charAt(0).toUpperCase() + seg.slice(1));
+            el.className = 'phase-segment ' + seg;
+            if (i < phaseOrder) el.classList.add('completed');
+            else if (i === phaseOrder) el.classList.add('active');
+        });
+
+        // Spike status
+        if (spikeFilter.inSpike) {
+            dom.spikeStatus.className = 'spike-indicator active';
+            dom.spikeStatus.innerHTML = '<span>⚠ Spike Detected</span>';
+        } else {
+            dom.spikeStatus.className = 'spike-indicator clear';
+            dom.spikeStatus.innerHTML = '<span>● No Spike</span>';
+        }
+    }
+
+    function updateMomentum(momentum) {
+        const pct = Math.round(momentum.ratio * 100);
+        dom.momentumBar.style.width = `${pct}%`;
+        dom.momentumLabel.textContent = `${pct}%`;
+
+        if (momentum.bias === 'BULLISH') {
+            dom.momentumBar.style.background = 'var(--accent-green)';
+            dom.momentumBias.style.color = 'var(--accent-green)';
+        } else if (momentum.bias === 'BEARISH') {
+            dom.momentumBar.style.background = 'var(--accent-red)';
+            dom.momentumBias.style.color = 'var(--accent-red)';
+        } else {
+            dom.momentumBar.style.background = 'var(--text-muted)';
+            dom.momentumBias.style.color = 'var(--text-muted)';
+        }
+
+        dom.momentumBias.textContent = momentum.bias;
+        dom.uptickCount.textContent = momentum.upticks;
+        dom.downtickCount.textContent = momentum.downticks;
+    }
+
+    function updateTrend(trend) {
+        dom.ema20Value.textContent = trend.ema20 !== null ? trend.ema20.toFixed(2) : '—';
+        dom.ema50Value.textContent = trend.ema50 !== null ? trend.ema50.toFixed(2) : '—';
+
+        const colors = { BULLISH: 'var(--accent-green)', BEARISH: 'var(--accent-red)', NEUTRAL: 'var(--text-muted)' };
+        dom.trendDirection.textContent = trend.direction;
+        dom.trendDirection.style.color = colors[trend.direction];
+
+        // Price direction
+        if (tickAggregator.priceStart !== null && tickAggregator.priceNow !== null) {
+            if (tickAggregator.priceNow > tickAggregator.priceStart) {
+                dom.priceDirection.textContent = '▲ BULLISH';
+                dom.priceDirection.style.color = 'var(--accent-green)';
+            } else if (tickAggregator.priceNow < tickAggregator.priceStart) {
+                dom.priceDirection.textContent = '▼ BEARISH';
+                dom.priceDirection.style.color = 'var(--accent-red)';
+            } else {
+                dom.priceDirection.textContent = '– FLAT';
+                dom.priceDirection.style.color = 'var(--text-muted)';
+            }
+        }
+    }
+
+    function updateScore(result) {
+        dom.totalScore.textContent = (result.score >= 0 ? '+' : '') + result.score;
+        dom.totalScore.className = 'score-value ' + (result.score > 0 ? 'positive' : result.score < 0 ? 'negative' : 'neutral');
+
+        function setScoreItem(el, val) {
+            el.textContent = (val >= 0 ? '+' : '') + val;
+            el.className = 'score-item-value ' + (val > 0 ? 'positive' : val < 0 ? 'negative' : 'neutral');
+        }
+
+        setScoreItem(dom.scoreMomentum, result.scoreMomentum);
+        setScoreItem(dom.scoreTrend, result.scoreTrend);
+        setScoreItem(dom.scorePrice, result.scorePrice);
+    }
+
+    function emitSignal(result) {
+        const expiryDate = new Date(windowEngine.windowExpiry * 1000);
+        const nowDate = new Date();
+
+        // Update signal card
+        const sigLower = result.signal.toLowerCase();
+        dom.signalCard.className = 'card signal-card ' + sigLower + ' signal-flash';
+        dom.signalValue.className = 'signal-value ' + sigLower;
+        dom.signalValue.textContent = result.signal;
+        dom.entryPrice.textContent = tickAggregator.priceNow !== null ? tickAggregator.priceNow.toFixed(2) : '—';
+        dom.expiryTime.textContent = expiryDate.toLocaleTimeString('en-US', { hour12: false });
+        dom.signalScore.textContent = (result.score >= 0 ? '+' : '') + result.score;
+        dom.signalFallback.textContent = result.usedFallback ? 'YES' : 'NO';
+
+        // Remove animation class after it finishes
+        setTimeout(() => dom.signalCard.classList.remove('signal-flash'), 600);
+
+        // Add to history
+        signalHistory.unshift({
+            signal: result.signal,
+            price: tickAggregator.priceNow,
+            score: result.score,
+            fallback: result.usedFallback,
+            time: nowDate,
+            window: windowEngine.windowIndex,
+        });
+
+        renderHistory();
+    }
+
+    function renderHistory() {
+        if (signalHistory.length === 0) return;
+
+        dom.signalHistory.innerHTML = signalHistory.map(h => {
+            const sigLower = h.signal.toLowerCase();
+            const timeStr = h.time.toLocaleTimeString('en-US', { hour12: false });
+            return `<div class="history-item ${sigLower}">
+                <span class="history-signal ${sigLower}">${h.signal}</span>
+                <span class="history-price">${h.price !== null ? h.price.toFixed(2) : '—'}</span>
+                <div class="history-meta">
+                    Window #${h.window} &nbsp;|&nbsp; Score: ${h.score >= 0 ? '+' : ''}${h.score}${h.fallback ? ' (FB)' : ''}
+                    <br>${timeStr}
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function addTickLog(price, epoch, isSpike) {
+        const time = new Date(epoch * 1000).toLocaleTimeString('en-US', { hour12: false, fractionalSecondDigits: 0 });
+        recentTicks.unshift({ price, time, isSpike });
+        if (recentTicks.length > 50) recentTicks.pop();
+
+        dom.tickLog.innerHTML = recentTicks.map(t =>
+            `<div class="tick-log-entry${t.isSpike ? ' spike' : ''}">
+                <span>${t.time}</span>
+                <span>${t.price.toFixed(2)}${t.isSpike ? ' [SPIKE]' : ''}</span>
+            </div>`
+        ).join('');
+    }
+
+    function resetSignalCard() {
+        dom.signalCard.className = 'card signal-card pending';
+        dom.signalValue.className = 'signal-value pending';
+        dom.signalValue.textContent = 'PENDING';
+        dom.entryPrice.textContent = '—';
+        dom.expiryTime.textContent = '—';
+        dom.signalScore.textContent = '—';
+        dom.signalFallback.textContent = '—';
+    }
+
+    // ── Core Tick Processing ─────────────────────────────────────────
+    function onTick(price, epoch) {
+        // 1. Start window on first tick
+        if (windowEngine.windowIndex === 0) {
+            windowEngine.start();
+        }
+
+        // 2. Check for window reset
+        if (windowEngine.shouldReset()) {
+            resetWindow();
+        }
+
+        // 3. Anti-spike filtering
+        const isValid = spikeFilter.check(price);
+
+        // 4. Buffer & aggregator
+        bufferAppend(price, epoch);
+        tickAggregator.onTick(price, isValid);
+
+        // 5. UI updates
+        updatePrice(price);
+        updateWindowInfo();
+        addTickLog(price, epoch, !isValid);
+
+        // 6. Phase-dependent logic
+        const phase = windowEngine.phase;
+
+        if (phase === 'analysis' || phase === 'signal_generation') {
+            const momentum = computeMomentum();
+            const trend = computeTrend();
+            updateMomentum(momentum);
+            updateTrend(trend);
+
+            const result = evaluateSignal(
+                momentum.bias,
+                trend.direction,
+                tickAggregator.priceStart,
+                tickAggregator.priceNow
+            );
+            updateScore(result);
+        }
+
+        if (phase === 'signal_generation' && !signalEmitted) {
+            generateSignal();
+        }
+    }
+
+    function generateSignal() {
+        const momentum = computeMomentum();
+        const trend = computeTrend();
+
+        const result = evaluateSignal(
+            momentum.bias,
+            trend.direction,
+            tickAggregator.priceStart,
+            tickAggregator.priceNow
+        );
+
+        updateMomentum(momentum);
+        updateTrend(trend);
+        updateScore(result);
+        emitSignal(result);
+
+        signalEmitted = true;
+        currentSignal = result.signal;
+    }
+
+    function resetWindow() {
+        windowEngine.reset();
+        tickAggregator.reset();
+        spikeFilter.reset();
+        signalEmitted = false;
+        currentSignal = null;
+        resetSignalCard();
+    }
+
+    // ── Module 1: WebSocket Data Client ──────────────────────────────
+    function connectWebSocket() {
+        setConnectionStatus('connecting');
+
+        ws = new WebSocket(DERIV_WS_URL);
+
+        ws.onopen = function () {
+            setConnectionStatus('connected');
+            ws.send(JSON.stringify({ ticks: 'frxXAUUSD', subscribe: 1 }));
+        };
+
+        ws.onmessage = function (event) {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.tick) {
+                    const price = parseFloat(data.tick.quote);
+                    const epoch = parseInt(data.tick.epoch, 10);
+                    onTick(price, epoch);
+                }
+            } catch (e) {
+                console.error('Message parse error:', e);
+            }
+        };
+
+        ws.onerror = function () {
+            setConnectionStatus('disconnected');
+        };
+
+        ws.onclose = function () {
+            setConnectionStatus('disconnected');
+            // Auto-reconnect after 3 seconds
+            setTimeout(connectWebSocket, 3000);
+        };
+    }
+
+    // ── Phase UI Update Timer ────────────────────────────────────────
+    setInterval(updatePhase, 500);
+
+    // ── Start ────────────────────────────────────────────────────────
+    connectWebSocket();
+
+})();
+</script>
+
+</body>
+</html>
