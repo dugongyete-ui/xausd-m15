@@ -72,8 +72,104 @@ class WebSignalEngine:
         self.decision_engine = SignalDecisionEngine()
         self._signal_emitted = False
         self._current_signal: Signal | None = None
+        self._data_preloaded = False
+
+    async def _preload_historical_data(self) -> None:
+        """Fetch historical ticks from Deriv API to pre-populate the engine.
+
+        This allows the engine to start with complete data so it can
+        immediately compute indicators and generate signals without
+        waiting for the data collection phase.
+        """
+        logger.info("Fetching historical tick data from Deriv API...")
+
+        # Start window engine aligned to 15-minute boundary
+        self.window_engine.start()
+        window_start = self.window_engine.window_start
+
+        try:
+            async with wsc.connect(DERIV_WS_URL) as ws:
+                payload = json.dumps({
+                    "ticks_history": "frxXAUUSD",
+                    "adjust_start_time": 1,
+                    "count": 500,
+                    "end": "latest",
+                    "style": "ticks",
+                })
+                await ws.send(payload)
+                raw = await asyncio.wait_for(ws.recv(), timeout=10)
+                data = json.loads(raw)
+
+                if "history" not in data:
+                    logger.warning("No historical data received: %s", data)
+                    return
+
+                prices = data["history"]["prices"]
+                times = data["history"]["times"]
+
+                for i in range(len(prices)):
+                    price = float(prices[i])
+                    epoch = int(times[i])
+
+                    # Always add to tick buffer for EMA calculations
+                    self.tick_buffer.append(price, epoch)
+
+                    # Only add to aggregator if within current window
+                    if epoch >= window_start:
+                        is_valid = self.spike_filter.check(price)
+                        self.tick_aggregator.on_tick(price, is_valid)
+
+                logger.info(
+                    "Pre-loaded %d historical ticks. Buffer: %d, Window ticks: %d",
+                    len(prices),
+                    len(self.tick_buffer),
+                    self.tick_aggregator.tick_count,
+                )
+
+                self._data_preloaded = True
+
+                # Update engine state
+                phase = self.window_engine.phase
+                engine_state["phase"] = phase.value
+                engine_state["remaining"] = self.window_engine.remaining
+                engine_state["elapsed"] = self.window_engine.elapsed
+                engine_state["windowIndex"] = self.window_engine.window_index
+                engine_state["windowStart"] = self.window_engine.window_start
+                engine_state["windowExpiry"] = self.window_engine.window_expiry
+                engine_state["price"] = self.tick_buffer.latest_price
+                engine_state["priceStart"] = self.tick_aggregator.price_start
+                engine_state["tickCount"] = self.tick_aggregator.tick_count
+                engine_state["bufferCount"] = len(self.tick_buffer)
+                engine_state["derivConnected"] = True
+
+                # If we have enough data, compute indicators
+                if phase in (
+                    WindowPhase.ANALYSIS,
+                    WindowPhase.SIGNAL_GENERATION,
+                    WindowPhase.HOLD,
+                ):
+                    indicators = self._compute_indicators()
+                    engine_state["indicators"] = indicators
+
+                # If past signal generation and no signal yet, generate now
+                if phase in (WindowPhase.SIGNAL_GENERATION, WindowPhase.HOLD):
+                    if not self._signal_emitted:
+                        await self._generate_signal()
+                        logger.info(
+                            "Signal generated immediately from historical data (phase: %s)",
+                            phase.value,
+                        )
+
+        except Exception as e:
+            logger.error("Failed to fetch historical data: %s", e)
+            # Still start the window engine even if historical fetch fails
+            if self.window_engine.window_index == 0:
+                self.window_engine.start()
 
     async def run(self) -> None:
+        # Pre-load historical data before starting live stream
+        await self._preload_historical_data()
+
         backoff = 1.0
         max_backoff = 30.0
         while True:
@@ -99,7 +195,7 @@ class WebSignalEngine:
                         except Exception as e:
                             logger.error("Tick processing error: %s", e)
             except Exception as exc:
-                logger.warning("WS disconnected: %s – reconnecting in %.1fs", exc, backoff)
+                logger.warning("WS disconnected: %s -- reconnecting in %.1fs", exc, backoff)
                 engine_state["derivConnected"] = False
                 await broadcast({"type": "derivStatus", "connected": False})
                 await asyncio.sleep(backoff)
@@ -146,12 +242,16 @@ class WebSignalEngine:
             "bufferCount": len(self.tick_buffer),
         })
 
-        if phase in (WindowPhase.ANALYSIS, WindowPhase.SIGNAL_GENERATION):
+        # Compute indicators in analysis, signal gen, AND hold phases
+        # (hold included for mid-window starts with pre-loaded data)
+        if phase in (WindowPhase.ANALYSIS, WindowPhase.SIGNAL_GENERATION, WindowPhase.HOLD):
             indicators = self._compute_indicators()
             engine_state["indicators"] = indicators
             await broadcast({"type": "indicators", **indicators})
 
-        if phase is WindowPhase.SIGNAL_GENERATION and not self._signal_emitted:
+        # Generate signal in both SIGNAL_GENERATION and HOLD phases
+        # (hold included for mid-window starts where minute 5 was missed)
+        if phase in (WindowPhase.SIGNAL_GENERATION, WindowPhase.HOLD) and not self._signal_emitted:
             await self._generate_signal()
 
     def _compute_indicators(self) -> dict:
