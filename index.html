@@ -1113,6 +1113,8 @@
                 };
             });
             gridSignals = signalHistoryArr.slice();
+            winCount = 0;
+            lossCount = 0;
             gridSignals.forEach(function(gs) {
                 if (gs.outcome === 'WIN') winCount++;
                 else if (gs.outcome === 'LOSS') lossCount++;
