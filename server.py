@@ -385,6 +385,7 @@ class WebSignalEngine:
             "windowIndex": window_index,
             "score": score,
             "usedFallback": used_fallback,
+            "time": time.time(),
         }
 
         self._signal_emitted = True
