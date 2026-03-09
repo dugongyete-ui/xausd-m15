@@ -239,10 +239,10 @@
         }
         .phase-bar { display: flex; gap: 3px; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 10px; }
         .phase-seg { border-radius: 3px; transition: all 0.4s; background: var(--bg-inset); }
-        .phase-seg.collection { flex: 3; }
-        .phase-seg.analysis { flex: 2; }
+        .phase-seg.collection { flex: 2; }
+        .phase-seg.analysis { flex: 6; }
         .phase-seg.signal { flex: 0.5; }
-        .phase-seg.hold { flex: 10; }
+        .phase-seg.hold { flex: 2; }
         .phase-seg.active { background: var(--blue); box-shadow: 0 0 10px rgba(99,102,241,0.4); }
         .phase-seg.completed { background: var(--green); }
         .phase-footer { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--text-muted); }
@@ -1311,18 +1311,42 @@
                 resetSignalCard();
                 if (msg.history) {
                     msg.history.forEach(function(h) {
-                        var found = signalHistoryArr.some(function(s) { return s.window === h.windowIndex; });
-                        if (!found && h.outcome) {
+                        var existing = null;
+                        for (var i = 0; i < signalHistoryArr.length; i++) {
+                            if (signalHistoryArr[i].window === h.windowIndex) {
+                                existing = signalHistoryArr[i];
+                                break;
+                            }
+                        }
+                        if (existing) {
+                            if (h.outcome && existing.outcome === null) {
+                                existing.outcome = h.outcome;
+                                if (h.outcome === 'WIN') winCount++;
+                                else if (h.outcome === 'LOSS') lossCount++;
+                            }
+                            if (h.expiryPrice && existing.expiryPrice === null) {
+                                existing.expiryPrice = h.expiryPrice;
+                            }
+                        } else {
                             var rec = {
                                 signal: h.signal, price: h.entryPrice, score: h.score,
-                                fallback: h.usedFallback, time: new Date(h.time * 1000),
+                                fallback: h.usedFallback,
+                                confidence: h.confidence || 'LOW',
+                                rsi: h.rsi,
+                                trigger: h.trigger,
+                                time: new Date(h.time * 1000),
                                 window: h.windowIndex, entryPrice: h.entryPrice,
-                                expiryEpoch: h.expiryEpoch, outcome: h.outcome, expiryPrice: h.expiryPrice,
+                                expiryEpoch: h.expiryEpoch, outcome: h.outcome || null,
+                                expiryPrice: h.expiryPrice || null,
                             };
-                            signalHistoryArr.push(rec);
+                            if (rec.outcome === 'WIN') winCount++;
+                            else if (rec.outcome === 'LOSS') lossCount++;
+                            signalHistoryArr.unshift(rec);
+                            gridSignals.unshift(rec);
                         }
                     });
                     renderHistory();
+                    renderGrid();
                 }
                 break;
 

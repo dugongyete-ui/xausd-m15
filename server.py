@@ -30,10 +30,11 @@ PORT = 5000
 MARKET_CLOSED_RETRY_INTERVAL = 60.0
 NORMAL_BACKOFF_MAX = 30.0
 
-# Dynamic timing: generate early if score is very strong and enough ticks available
-EARLY_SIGNAL_MIN_ELAPSED = 180     # at least 3 minutes of data
-EARLY_SIGNAL_MIN_TICKS = 20        # at least 20 window ticks
-EARLY_SIGNAL_SCORE_THRESHOLD = 3   # |score| must be >= 3 for early trigger
+# Adaptive signal timing — market-driven, not fixed at minute 5
+SIGNAL_MIN_ELAPSED = 180       # minimum 3 minutes of data before evaluating
+SIGNAL_MIN_TICKS = 20          # minimum window ticks required
+SIGNAL_SCORE_THRESHOLD = 2     # |score| must be >= 2 to fire (matches decision threshold)
+SIGNAL_FORCE_ELAPSED = 720     # hard timeout at 12 min — force signal regardless of score
 
 connected_clients: set[web.WebSocketResponse] = set()
 signal_history: list[dict] = []
@@ -174,13 +175,17 @@ class WebSignalEngine:
                     indicators = self._compute_indicators()
                     engine_state["indicators"] = indicators
 
-                # If past signal generation and no signal yet, generate now
-                if phase in (WindowPhase.SIGNAL_GENERATION, WindowPhase.HOLD):
-                    if not self._signal_emitted:
-                        await self._generate_signal()
+                # Adaptive check: generate signal from historical data if conditions are met
+                elapsed = self.window_engine.elapsed
+                tick_count = self.tick_aggregator.tick_count
+                if not self._signal_emitted and elapsed >= SIGNAL_MIN_ELAPSED and tick_count >= SIGNAL_MIN_TICKS:
+                    score = self._quick_score()
+                    if abs(score) >= SIGNAL_SCORE_THRESHOLD or elapsed >= SIGNAL_FORCE_ELAPSED:
+                        trigger = "timeout" if elapsed >= SIGNAL_FORCE_ELAPSED else "market"
+                        await self._generate_signal(trigger=trigger)
                         logger.info(
-                            "Signal generated immediately from historical data (phase: %s)",
-                            phase.value,
+                            "Signal generated from historical data: elapsed=%.0fs score=%+d trigger=%s",
+                            elapsed, score, trigger,
                         )
 
         except Exception as e:
@@ -292,29 +297,36 @@ class WebSignalEngine:
             "bufferCount": len(self.tick_buffer),
         })
 
-        # Compute indicators in analysis, signal gen, AND hold phases
+        # Compute indicators once we have enough data
         if phase in (WindowPhase.ANALYSIS, WindowPhase.SIGNAL_GENERATION, WindowPhase.HOLD):
             indicators = self._compute_indicators()
             engine_state["indicators"] = indicators
             await broadcast({"type": "indicators", **indicators})
 
-        # Generate signal: standard at SIGNAL_GENERATION/HOLD phases
-        if phase in (WindowPhase.SIGNAL_GENERATION, WindowPhase.HOLD) and not self._signal_emitted:
-            await self._generate_signal(trigger="scheduled")
-            return
-
-        # Dynamic early signal: trigger in ANALYSIS phase if signal is very strong
-        if phase is WindowPhase.ANALYSIS and not self._signal_emitted:
+        # Adaptive market-driven signal generation
+        # After minimum collection time, evaluate every tick and fire when ready
+        if not self._signal_emitted:
             elapsed = self.window_engine.elapsed
             tick_count = self.tick_aggregator.tick_count
-            if elapsed >= EARLY_SIGNAL_MIN_ELAPSED and tick_count >= EARLY_SIGNAL_MIN_TICKS:
+
+            if elapsed >= SIGNAL_MIN_ELAPSED and tick_count >= SIGNAL_MIN_TICKS:
                 score = self._quick_score()
-                if abs(score) >= EARLY_SIGNAL_SCORE_THRESHOLD:
+
+                if abs(score) >= SIGNAL_SCORE_THRESHOLD:
+                    # Indicators have converged — market is giving a clear direction
                     logger.info(
-                        "Dynamic early signal trigger: elapsed=%.0fs ticks=%d score=%+d",
+                        "Market-driven signal: elapsed=%.0fs ticks=%d score=%+d",
                         elapsed, tick_count, score,
                     )
-                    await self._generate_signal(trigger="early")
+                    await self._generate_signal(trigger="market")
+
+                elif elapsed >= SIGNAL_FORCE_ELAPSED:
+                    # Hard timeout — force a signal using best available data
+                    logger.info(
+                        "Timeout signal: elapsed=%.0fs ticks=%d score=%+d",
+                        elapsed, tick_count, score,
+                    )
+                    await self._generate_signal(trigger="timeout")
 
     def _quick_score(self) -> int:
         """Compute current score without emitting any logs (for early trigger check)."""
