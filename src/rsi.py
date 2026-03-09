@@ -1,12 +1,13 @@
-"""RSI (Relative Strength Index) indicator module.
+"""RSI (Relative Strength Index) Indicator Module.
 
-Computes the 14-period RSI from tick prices.
+Computes the RSI from a tick buffer to provide an additional signal
+for overbought/oversold conditions.
 
 Interpretation
 --------------
-  RSI > 70  → overbought (bearish bias)  → -1 contribution
-  RSI < 30  → oversold  (bullish bias)   → +1 contribution
-  30–70     → neutral                    →  0 contribution
+  RSI > 70 → overbought (bearish signal)
+  RSI < 30 → oversold (bullish signal)
+  30 <= RSI <= 70 → neutral
 """
 
 from __future__ import annotations
@@ -14,66 +15,91 @@ from __future__ import annotations
 import logging
 from enum import Enum
 
+from src.tick_buffer import TickBuffer
+
 logger = logging.getLogger(__name__)
 
-RSI_PERIOD = 14
-RSI_OVERBOUGHT = 70.0
-RSI_OVERSOLD = 30.0
+DEFAULT_RSI_PERIOD = 14
+OVERBOUGHT_THRESHOLD = 70.0
+OVERSOLD_THRESHOLD = 30.0
 
 
-class RSIBias(Enum):
-    """Signal bias derived from RSI."""
+class RSISignal(Enum):
+    """Signal derived from RSI analysis."""
 
-    BULLISH = "bullish"
-    BEARISH = "bearish"
+    OVERBOUGHT = "overbought"
+    OVERSOLD = "oversold"
     NEUTRAL = "neutral"
 
 
-def compute_rsi(prices: list[float], period: int = RSI_PERIOD) -> tuple[float | None, RSIBias]:
-    """Compute RSI and return ``(rsi_value, bias)``.
+class RSIIndicator:
+    """Computes RSI from a :class:`TickBuffer`."""
 
-    Returns ``(None, NEUTRAL)`` when there are insufficient data points.
-    """
-    if len(prices) < period + 1:
-        return None, RSIBias.NEUTRAL
+    def __init__(
+        self,
+        buffer: TickBuffer,
+        period: int = DEFAULT_RSI_PERIOD,
+        overbought: float = OVERBOUGHT_THRESHOLD,
+        oversold: float = OVERSOLD_THRESHOLD,
+    ) -> None:
+        self._buffer = buffer
+        self._period = period
+        self._overbought = overbought
+        self._oversold = oversold
 
-    gains: list[float] = []
-    losses: list[float] = []
+    def compute(self) -> tuple[float | None, RSISignal]:
+        """Return ``(rsi_value, signal)``.
 
-    for i in range(1, len(prices)):
-        change = prices[i] - prices[i - 1]
-        if change > 0:
-            gains.append(change)
-            losses.append(0.0)
-        elif change < 0:
-            gains.append(0.0)
-            losses.append(abs(change))
+        Returns ``(None, NEUTRAL)`` when the buffer has fewer data points
+        than the RSI period + 1.
+        """
+        prices = self._buffer.prices
+        if len(prices) < self._period + 1:
+            return None, RSISignal.NEUTRAL
+
+        # Calculate price changes
+        gains: list[float] = []
+        losses: list[float] = []
+        for i in range(1, len(prices)):
+            change = prices[i] - prices[i - 1]
+            if change > 0:
+                gains.append(change)
+                losses.append(0.0)
+            elif change < 0:
+                gains.append(0.0)
+                losses.append(abs(change))
+            else:
+                gains.append(0.0)
+                losses.append(0.0)
+
+        # Use exponential moving average method for RSI
+        # Start with SMA for the first period
+        avg_gain = sum(gains[:self._period]) / self._period
+        avg_loss = sum(losses[:self._period]) / self._period
+
+        # Apply smoothing for remaining data points
+        for i in range(self._period, len(gains)):
+            avg_gain = (avg_gain * (self._period - 1) + gains[i]) / self._period
+            avg_loss = (avg_loss * (self._period - 1) + losses[i]) / self._period
+
+        if avg_loss == 0:
+            rsi = 100.0
         else:
-            gains.append(0.0)
-            losses.append(0.0)
+            rs = avg_gain / avg_loss
+            rsi = 100.0 - (100.0 / (1.0 + rs))
 
-    if len(gains) < period:
-        return None, RSIBias.NEUTRAL
+        # Determine signal
+        if rsi >= self._overbought:
+            signal = RSISignal.OVERBOUGHT
+        elif rsi <= self._oversold:
+            signal = RSISignal.OVERSOLD
+        else:
+            signal = RSISignal.NEUTRAL
 
-    avg_gain = sum(gains[:period]) / period
-    avg_loss = sum(losses[:period]) / period
-
-    for i in range(period, len(gains)):
-        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
-        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
-
-    if avg_loss == 0:
-        rsi = 100.0
-    else:
-        rs = avg_gain / avg_loss
-        rsi = 100.0 - (100.0 / (1.0 + rs))
-
-    if rsi > RSI_OVERBOUGHT:
-        bias = RSIBias.BEARISH
-    elif rsi < RSI_OVERSOLD:
-        bias = RSIBias.BULLISH
-    else:
-        bias = RSIBias.NEUTRAL
-
-    logger.debug("RSI(%d)=%.2f bias=%s", period, rsi, bias.value)
-    return rsi, bias
+        logger.debug(
+            "RSI: value=%.2f signal=%s (period=%d)",
+            rsi,
+            signal.value,
+            self._period,
+        )
+        return rsi, signal

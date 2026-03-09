@@ -33,6 +33,11 @@ class WindowPhase(enum.Enum):
     HOLD = "hold"                        # after signal or 720 s+
 
 
+# Minimum elapsed seconds before an early signal can be generated
+# during the analysis phase when confidence is high enough.
+EARLY_SIGNAL_MIN_ELAPSED = 200  # ~3m20s into the window
+
+
 class WindowEngine:
     """Tracks the current 15-minute window and its phase."""
 
