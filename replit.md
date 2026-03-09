@@ -8,7 +8,7 @@ The system has two modes of operation:
 1. **Browser-only dashboard** (`index.html`) — connects directly to the Deriv WebSocket API from the browser, no server needed
 2. **Backend server** (`server.py`) — a Python async server that processes ticks server-side and pushes state to connected browser clients via WebSocket
 
-The signal engine uses a weighted scoring system combining tick momentum, EMA crossover analysis, and price direction to generate exactly one signal per 15-minute window.
+The signal engine uses a weighted scoring system combining tick momentum, EMA crossover analysis, RSI, and price direction to generate exactly one signal per 15-minute window. It supports dynamic early signal generation when a very strong signal (|score|≥3) is detected after at least 3 minutes with 20+ ticks — instead of always waiting until the fixed 5-minute mark.
 
 ## User Preferences
 
@@ -31,7 +31,8 @@ The engine is structured as nine sequential modules, each in `src/`:
 5. **TickAggregator** (`tick_aggregator.py`) — Tracks window open price and collects valid prices per window
 6. **MomentumAnalyzer** (`momentum_analyzer.py`) — Computes uptick/downtick ratio; >0.60 = bullish, <0.40 = bearish
 7. **TrendEngine** (`trend_engine.py`) — Calculates EMA-20 and EMA-50; crossover determines trend direction
-8. **SignalDecisionEngine** (`signal_decision.py`) — Weighted scoring: momentum (+/-2), EMA crossover (+/-1), price direction (+/-1); score ≥+3 → CALL, ≤-3 → PUT; otherwise falls back to price direction
+8. **SignalDecisionEngine** (`signal_decision.py`) — Weighted scoring: momentum (+/-2), EMA crossover (+/-1), price direction (+/-1), RSI (+/-1); score ≥+2 → CALL, ≤-2 → PUT; otherwise falls back to price direction. Returns confidence level (HIGH/MEDIUM/LOW) and trigger type (scheduled/early)
+8a. **RSI** (`rsi.py`) — Computes 14-period RSI; >70 = overbought/bearish (-1), <30 = oversold/bullish (+1)
 9. **SignalOutput** (`signal_output.py`) — Formats and emits the signal to stdout/logs
 
 ### Backend Server (`server.py`)
