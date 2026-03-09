@@ -1006,8 +1006,20 @@
 
     function drawChart() {
         var canvas = $('priceChart');
-        var ctx = canvas.getContext('2d');
+        var container = canvas.parentElement;
         var dpr = window.devicePixelRatio || 1;
+        // Recalculate canvas size every frame to stay consistent with container
+        var cWidth = container.offsetWidth;
+        var cHeight = container.offsetHeight;
+        var targetW = Math.round(cWidth * dpr);
+        var targetH = Math.round(cHeight * dpr);
+        if (canvas.width !== targetW || canvas.height !== targetH) {
+            canvas.width = targetW;
+            canvas.height = targetH;
+            canvas.style.width = cWidth + 'px';
+            canvas.style.height = cHeight + 'px';
+        }
+        var ctx = canvas.getContext('2d');
         var w = canvas.width, h = canvas.height;
         ctx.clearRect(0, 0, w, h);
 
@@ -1110,7 +1122,7 @@
     }
 
     // ---- Init from server state ----
-    function applyInitState(state, history) {
+    function applyInitState(state, history, serverTickHistory) {
         if (!state) return;
         hideLoading();
         setDerivStatus(state.derivConnected);
@@ -1134,6 +1146,13 @@
 
         if (state.currentSignal) {
             emitSignal(state.currentSignal);
+        }
+
+        // Restore chart ticks from server history so chart persists across refresh
+        if (serverTickHistory && serverTickHistory.length > 0) {
+            chartTicks = serverTickHistory.map(function(t) {
+                return { price: t.price, epoch: t.epoch };
+            });
         }
 
         if (history && history.length > 0) {
@@ -1198,7 +1217,7 @@
     function handleMessage(msg) {
         switch (msg.type) {
             case 'init':
-                applyInitState(msg.state, msg.history);
+                applyInitState(msg.state, msg.history, msg.tickHistory);
                 break;
 
             case 'tick':
