@@ -362,6 +362,7 @@ class WebSignalEngine:
         entry_price = self.tick_aggregator.price_now
         expiry_epoch = self.window_engine.window_expiry
         window_index = self.window_engine.window_index
+        signal_time = time.time()
 
         sig_record = {
             "signal": signal.value,
@@ -370,7 +371,7 @@ class WebSignalEngine:
             "windowIndex": window_index,
             "score": score,
             "usedFallback": used_fallback,
-            "time": time.time(),
+            "time": signal_time,
             "expiryPrice": None,
             "outcome": None,
         }
@@ -385,7 +386,7 @@ class WebSignalEngine:
             "windowIndex": window_index,
             "score": score,
             "usedFallback": used_fallback,
-            "time": time.time(),
+            "time": signal_time,
         }
 
         self._signal_emitted = True
@@ -396,7 +397,6 @@ class WebSignalEngine:
             signal.value, score, used_fallback, entry_price or 0, window_index
         )
 
-        signal_time = engine_state["currentSignal"]["time"]
         await broadcast({
             "type": "signal",
             "signal": signal.value,
