@@ -207,7 +207,7 @@
         .signal-value.put { color: var(--red-bright); text-shadow: 0 0 30px var(--red-glow); }
         .signal-value.pending { color: var(--yellow); }
         .signal-meta {
-            display: grid; grid-template-columns: 1fr 1fr 1fr 1fr;
+            display: grid; grid-template-columns: 1fr 1fr 1fr;
             gap: 8px; margin-top: 16px;
         }
         .signal-meta-item {
@@ -441,7 +441,7 @@
         @media (max-width:600px) {
             .main { padding: 10px; }
             .price-bar { grid-template-columns: 1fr 1fr; }
-            .signal-meta { grid-template-columns: 1fr 1fr; }
+            .signal-meta { grid-template-columns: 1fr 1fr 1fr; }
             .indicators-grid { grid-template-columns: 1fr; }
             .signal-grid { grid-template-columns: repeat(4,1fr); }
             .phase-timer { font-size: 20px; }
@@ -538,8 +538,16 @@
                 <div class="meta-value" id="signalScore">--</div>
             </div>
             <div class="signal-meta-item">
-                <div class="meta-label">Fallback</div>
-                <div class="meta-value" id="signalFallback">--</div>
+                <div class="meta-label">Confidence</div>
+                <div class="meta-value" id="signalConfidence">--</div>
+            </div>
+            <div class="signal-meta-item">
+                <div class="meta-label">RSI</div>
+                <div class="meta-value" id="signalRsi">--</div>
+            </div>
+            <div class="signal-meta-item">
+                <div class="meta-label">Trigger</div>
+                <div class="meta-value" id="signalTrigger">--</div>
             </div>
         </div>
     </div>
@@ -612,6 +620,14 @@
                 <span class="indicator-label">Price Dir</span>
                 <span class="indicator-value" id="priceDir" style="color:var(--text-muted);">--</span>
             </div>
+            <div class="indicator-row">
+                <span class="indicator-label">RSI(14)</span>
+                <span class="indicator-value" id="rsiValue" style="color:var(--text-muted);">--</span>
+            </div>
+            <div class="indicator-row">
+                <span class="indicator-label">RSI Bias</span>
+                <span class="indicator-value" id="rsiBias" style="color:var(--text-muted);">NEUTRAL</span>
+            </div>
         </div>
     </div>
 
@@ -633,8 +649,12 @@
             <span class="indicator-label">Price Dir (+/-1)</span>
             <span class="indicator-value neutral" id="scorePrice">0</span>
         </div>
+        <div class="indicator-row">
+            <span class="indicator-label">RSI (+/-1)</span>
+            <span class="indicator-value neutral" id="scoreRsi">0</span>
+        </div>
         <div class="score-legend">
-            CALL &ge; +3 &nbsp;&bull;&nbsp; PUT &le; -3 &nbsp;&bull;&nbsp; Otherwise: Fallback
+            CALL &ge; +2 &nbsp;&bull;&nbsp; PUT &le; -2 &nbsp;&bull;&nbsp; Otherwise: Fallback
         </div>
     </div>
 
@@ -850,6 +870,19 @@
             setScoreEl('scoreMom', score.momentum || 0);
             setScoreEl('scoreTrend', score.trend || 0);
             setScoreEl('scorePrice', score.price || 0);
+            setScoreEl('scoreRsi', score.rsi || 0);
+        }
+        var rsi = data.rsi;
+        if (rsi) {
+            var rv = rsi.value !== null && rsi.value !== undefined ? parseFloat(rsi.value).toFixed(1) : '--';
+            $('rsiValue').textContent = rv;
+            var rc = rsi.bias === 'bullish' ? 'var(--green)' : rsi.bias === 'bearish' ? 'var(--red)' : 'var(--text-muted)';
+            $('rsiValue').style.color = rc;
+            var rsiLabel = rsi.value !== null && rsi.value !== undefined
+                ? (parseFloat(rsi.value) > 70 ? ' (Overbought)' : parseFloat(rsi.value) < 30 ? ' (Oversold)' : '')
+                : '';
+            $('rsiBias').textContent = rsi.bias.toUpperCase() + rsiLabel;
+            $('rsiBias').style.color = rc;
         }
     }
 
@@ -875,7 +908,11 @@
         var expDate = new Date(data.expiryEpoch * 1000);
         $('expiryTime').textContent = expDate.toLocaleTimeString('en-US', {hour12: false, hour:'2-digit', minute:'2-digit'});
         $('signalScore').textContent = (data.score >= 0 ? '+' : '') + data.score;
-        $('signalFallback').textContent = data.usedFallback ? 'YES' : 'NO';
+        var confColor = data.confidence === 'HIGH' ? 'var(--green)' : data.confidence === 'MEDIUM' ? 'var(--yellow)' : 'var(--text-muted)';
+        $('signalConfidence').textContent = data.confidence || '--';
+        $('signalConfidence').style.color = confColor;
+        $('signalRsi').textContent = data.rsi !== null && data.rsi !== undefined ? parseFloat(data.rsi).toFixed(1) : '--';
+        $('signalTrigger').textContent = data.trigger ? data.trigger.toUpperCase() : '--';
         $('chartSignalBadge').className = 'chart-signal-badge ' + sig;
         $('chartSignalBadge').textContent = data.signal;
         currentSignalStr = data.signal;
@@ -887,6 +924,9 @@
             price: data.entryPrice,
             score: data.score,
             fallback: data.usedFallback,
+            confidence: data.confidence || 'LOW',
+            rsi: data.rsi,
+            trigger: data.trigger,
             time: new Date(nowMs),
             window: data.windowIndex,
             entryPrice: data.entryPrice,
@@ -907,7 +947,10 @@
         $('entryPrice').textContent = '--';
         $('expiryTime').textContent = '--';
         $('signalScore').textContent = '--';
-        $('signalFallback').textContent = '--';
+        $('signalConfidence').textContent = '--';
+        $('signalConfidence').style.color = '';
+        $('signalRsi').textContent = '--';
+        $('signalTrigger').textContent = '--';
         $('chartSignalBadge').className = 'chart-signal-badge pending';
         $('chartSignalBadge').textContent = 'PENDING';
         currentSignalStr = null;
@@ -925,10 +968,12 @@
             var sl = h.signal.toLowerCase();
             var ts = h.time.toLocaleTimeString('en-US', {hour12: false});
             var outcome = h.outcome ? '<span class="outcome-badge ' + h.outcome + '">' + h.outcome + '</span>' : '';
+            var confTag = h.confidence ? ' [' + h.confidence + ']' : '';
+            var rsiTag = h.rsi !== null && h.rsi !== undefined ? ' RSI:' + parseFloat(h.rsi).toFixed(1) : '';
             return '<div class="history-item ' + sl + '">' +
                 '<span class="history-sig ' + sl + '">' + h.signal + '</span>' +
                 '<span class="history-price">' + (h.price ? parseFloat(h.price).toFixed(2) : '--') + '</span>' +
-                '<div class="history-meta">W#' + h.window + ' | ' + (h.score >= 0 ? '+' : '') + h.score + (h.fallback ? ' (FB)' : '') + '<br>' + ts + outcome + '</div>' +
+                '<div class="history-meta">W#' + h.window + ' | ' + (h.score >= 0 ? '+' : '') + h.score + confTag + (h.fallback ? ' (FB)' : '') + rsiTag + '<br>' + ts + outcome + '</div>' +
                 '</div>';
         }).join('');
     }
@@ -1162,6 +1207,9 @@
                     price: h.entryPrice,
                     score: h.score,
                     fallback: h.usedFallback,
+                    confidence: h.confidence || 'LOW',
+                    rsi: h.rsi,
+                    trigger: h.trigger,
                     time: new Date(h.time * 1000),
                     window: h.windowIndex,
                     entryPrice: h.entryPrice,

@@ -6,16 +6,23 @@ Scoring system
     tick momentum bullish  → +2
     EMA20 > EMA50          → +1
     price_now > price_start → +1
+    RSI < 30 (oversold)    → +1
 
   Bearish:
     tick momentum bearish  → −2
     EMA20 < EMA50          → −1
     price_now < price_start → −1
+    RSI > 70 (overbought)  → −1
 
 Decision logic:
-  score ≥ +3 → CALL
-  score ≤ −3 → PUT
+  score ≥ +2 → CALL  (lowered from +3 for more strong signals)
+  score ≤ −2 → PUT   (lowered from -3 for more strong signals)
   otherwise  → fallback (price direction)
+
+Confidence level:
+  HIGH   : |score| ≥ 4, no fallback
+  MEDIUM : |score| ≥ 2, no fallback
+  LOW    : fallback used
 """
 
 from __future__ import annotations
@@ -25,11 +32,12 @@ from enum import Enum
 
 from src.momentum_analyzer import MomentumBias
 from src.trend_engine import TrendDirection
+from src.rsi import RSIBias
 
 logger = logging.getLogger(__name__)
 
-CALL_THRESHOLD = 3
-PUT_THRESHOLD = -3
+CALL_THRESHOLD = 2
+PUT_THRESHOLD = -2
 
 
 class Signal(Enum):
@@ -37,6 +45,14 @@ class Signal(Enum):
 
     CALL = "CALL"
     PUT = "PUT"
+
+
+class Confidence(Enum):
+    """Signal confidence level."""
+
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
 
 
 class SignalDecisionEngine:
@@ -48,8 +64,9 @@ class SignalDecisionEngine:
         trend_direction: TrendDirection,
         price_start: float | None,
         price_now: float | None,
-    ) -> tuple[Signal, int, bool]:
-        """Return ``(signal, score, used_fallback)``.
+        rsi_bias: RSIBias = RSIBias.NEUTRAL,
+    ) -> tuple[Signal, int, bool, Confidence]:
+        """Return ``(signal, score, used_fallback, confidence)``.
 
         Parameters
         ----------
@@ -61,6 +78,8 @@ class SignalDecisionEngine:
             Window opening price.
         price_now:
             Current price.
+        rsi_bias:
+            Output of :func:`compute_rsi`.
         """
         score = 0
 
@@ -83,6 +102,12 @@ class SignalDecisionEngine:
             elif price_now < price_start:
                 score -= 1
 
+        # --- RSI contribution (weight 1) -------------------------------
+        if rsi_bias is RSIBias.BULLISH:
+            score += 1
+        elif rsi_bias is RSIBias.BEARISH:
+            score -= 1
+
         # --- Decision ---------------------------------------------------
         used_fallback = False
         if score >= CALL_THRESHOLD:
@@ -90,17 +115,26 @@ class SignalDecisionEngine:
         elif score <= PUT_THRESHOLD:
             signal = Signal.PUT
         else:
-            # Fallback layer – always produce a signal.
             signal = self._fallback(price_start, price_now)
             used_fallback = True
 
+        # --- Confidence level -------------------------------------------
+        abs_score = abs(score)
+        if used_fallback:
+            confidence = Confidence.LOW
+        elif abs_score >= 4:
+            confidence = Confidence.HIGH
+        else:
+            confidence = Confidence.MEDIUM
+
         logger.info(
-            "Decision: score=%+d signal=%s fallback=%s",
+            "Decision: score=%+d signal=%s fallback=%s confidence=%s",
             score,
             signal.value,
             used_fallback,
+            confidence.value,
         )
-        return signal, score, used_fallback
+        return signal, score, used_fallback, confidence
 
     # ------------------------------------------------------------------
     # Fallback

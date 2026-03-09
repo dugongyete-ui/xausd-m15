@@ -14,7 +14,8 @@ import websockets.asyncio.client as wsc
 
 from src.anti_spike_filter import AntiSpikeFilter
 from src.momentum_analyzer import MomentumAnalyzer, MomentumBias
-from src.signal_decision import Signal, SignalDecisionEngine
+from src.rsi import compute_rsi, RSIBias
+from src.signal_decision import Signal, SignalDecisionEngine, Confidence
 from src.tick_aggregator import TickAggregator
 from src.tick_buffer import TickBuffer
 from src.trend_engine import TrendEngine, TrendDirection
@@ -28,6 +29,11 @@ PORT = 5000
 
 MARKET_CLOSED_RETRY_INTERVAL = 60.0
 NORMAL_BACKOFF_MAX = 30.0
+
+# Dynamic timing: generate early if score is very strong and enough ticks available
+EARLY_SIGNAL_MIN_ELAPSED = 180     # at least 3 minutes of data
+EARLY_SIGNAL_MIN_TICKS = 20        # at least 20 window ticks
+EARLY_SIGNAL_SCORE_THRESHOLD = 3   # |score| must be >= 3 for early trigger
 
 connected_clients: set[web.WebSocketResponse] = set()
 signal_history: list[dict] = []
@@ -83,12 +89,7 @@ class WebSignalEngine:
         self._data_preloaded = False
 
     async def _preload_historical_data(self) -> None:
-        """Fetch historical ticks from Deriv API to pre-populate the engine.
-
-        This allows the engine to start with complete data so it can
-        immediately compute indicators and generate signals without
-        waiting for the data collection phase.
-        """
+        """Fetch historical ticks from Deriv API to pre-populate the engine."""
         logger.info("Fetching historical tick data from Deriv API...")
 
         # Start window engine aligned to 15-minute boundary
@@ -129,7 +130,7 @@ class WebSignalEngine:
                     price = float(prices[i])
                     epoch = int(times[i])
 
-                    # Always add to tick buffer for EMA calculations
+                    # Always add to tick buffer for EMA/RSI calculations
                     self.tick_buffer.append(price, epoch)
 
                     # Store ticks within current window for chart history
@@ -237,7 +238,6 @@ class WebSignalEngine:
                 await broadcast({"type": "derivStatus", "connected": False, "marketClosed": engine_state["marketClosed"]})
 
             if engine_state["marketClosed"]:
-                # When market is closed, poll every 60s instead of aggressive backoff
                 logger.info("Market closed — waiting %.0fs before next check...", MARKET_CLOSED_RETRY_INTERVAL)
                 await asyncio.sleep(MARKET_CLOSED_RETRY_INTERVAL)
                 backoff = 1.0
@@ -293,21 +293,52 @@ class WebSignalEngine:
         })
 
         # Compute indicators in analysis, signal gen, AND hold phases
-        # (hold included for mid-window starts with pre-loaded data)
         if phase in (WindowPhase.ANALYSIS, WindowPhase.SIGNAL_GENERATION, WindowPhase.HOLD):
             indicators = self._compute_indicators()
             engine_state["indicators"] = indicators
             await broadcast({"type": "indicators", **indicators})
 
-        # Generate signal in both SIGNAL_GENERATION and HOLD phases
-        # (hold included for mid-window starts where minute 5 was missed)
+        # Generate signal: standard at SIGNAL_GENERATION/HOLD phases
         if phase in (WindowPhase.SIGNAL_GENERATION, WindowPhase.HOLD) and not self._signal_emitted:
-            await self._generate_signal()
+            await self._generate_signal(trigger="scheduled")
+            return
+
+        # Dynamic early signal: trigger in ANALYSIS phase if signal is very strong
+        if phase is WindowPhase.ANALYSIS and not self._signal_emitted:
+            elapsed = self.window_engine.elapsed
+            tick_count = self.tick_aggregator.tick_count
+            if elapsed >= EARLY_SIGNAL_MIN_ELAPSED and tick_count >= EARLY_SIGNAL_MIN_TICKS:
+                score = self._quick_score()
+                if abs(score) >= EARLY_SIGNAL_SCORE_THRESHOLD:
+                    logger.info(
+                        "Dynamic early signal trigger: elapsed=%.0fs ticks=%d score=%+d",
+                        elapsed, tick_count, score,
+                    )
+                    await self._generate_signal(trigger="early")
+
+    def _quick_score(self) -> int:
+        """Compute current score without emitting any logs (for early trigger check)."""
+        _, momentum_bias = self.momentum_analyzer.compute()
+        prices = self.tick_buffer.prices
+        _, _, trend_dir = self.trend_engine.compute(prices)
+        rsi_value, rsi_bias = compute_rsi(prices)
+
+        p_start = self.tick_aggregator.price_start
+        p_now = self.tick_aggregator.price_now
+
+        score = 0
+        score += 2 if momentum_bias is MomentumBias.BULLISH else (-2 if momentum_bias is MomentumBias.BEARISH else 0)
+        score += 1 if trend_dir is TrendDirection.BULLISH else (-1 if trend_dir is TrendDirection.BEARISH else 0)
+        if p_start is not None and p_now is not None:
+            score += 1 if p_now > p_start else (-1 if p_now < p_start else 0)
+        score += 1 if rsi_bias is RSIBias.BULLISH else (-1 if rsi_bias is RSIBias.BEARISH else 0)
+        return score
 
     def _compute_indicators(self) -> dict:
         ratio, momentum_bias = self.momentum_analyzer.compute()
         prices = self.tick_buffer.prices
         ema20, ema50, trend_dir = self.trend_engine.compute(prices)
+        rsi_value, rsi_bias = compute_rsi(prices)
 
         p_start = self.tick_aggregator.price_start
         p_now = self.tick_aggregator.price_now
@@ -320,6 +351,7 @@ class WebSignalEngine:
                 s_price = 1
             elif p_now < p_start:
                 s_price = -1
+        s_rsi = 1 if rsi_bias is RSIBias.BULLISH else (-1 if rsi_bias is RSIBias.BEARISH else 0)
 
         p_list = self.tick_buffer.prices
         upticks = downticks = 0
@@ -341,22 +373,30 @@ class WebSignalEngine:
                 "ema20": ema20,
                 "ema50": ema50,
             },
+            "rsi": {
+                "value": rsi_value,
+                "bias": rsi_bias.value,
+            },
             "score": {
-                "total": s_mom + s_trend + s_price,
+                "total": s_mom + s_trend + s_price + s_rsi,
                 "momentum": s_mom,
                 "trend": s_trend,
                 "price": s_price,
+                "rsi": s_rsi,
             },
         }
 
-    async def _generate_signal(self) -> None:
+    async def _generate_signal(self, trigger: str = "scheduled") -> None:
         ratio, momentum_bias = self.momentum_analyzer.compute()
         prices = self.tick_buffer.prices
         ema20, ema50, trend_dir = self.trend_engine.compute(prices)
-        signal, score, used_fallback = self.decision_engine.evaluate(
+        rsi_value, rsi_bias = compute_rsi(prices)
+
+        signal, score, used_fallback, confidence = self.decision_engine.evaluate(
             momentum_bias, trend_dir,
             self.tick_aggregator.price_start,
             self.tick_aggregator.price_now,
+            rsi_bias,
         )
 
         entry_price = self.tick_aggregator.price_now
@@ -371,6 +411,9 @@ class WebSignalEngine:
             "windowIndex": window_index,
             "score": score,
             "usedFallback": used_fallback,
+            "confidence": confidence.value,
+            "trigger": trigger,
+            "rsi": rsi_value,
             "time": signal_time,
             "expiryPrice": None,
             "outcome": None,
@@ -386,6 +429,9 @@ class WebSignalEngine:
             "windowIndex": window_index,
             "score": score,
             "usedFallback": used_fallback,
+            "confidence": confidence.value,
+            "trigger": trigger,
+            "rsi": rsi_value,
             "time": signal_time,
         }
 
@@ -393,8 +439,10 @@ class WebSignalEngine:
         self._current_signal = signal
 
         logger.info(
-            "SIGNAL: %s | score=%+d | fallback=%s | entry=%.2f | window=#%d",
-            signal.value, score, used_fallback, entry_price or 0, window_index
+            "SIGNAL: %s | score=%+d | fallback=%s | confidence=%s | trigger=%s | rsi=%.1f | entry=%.2f | window=#%d",
+            signal.value, score, used_fallback, confidence.value, trigger,
+            rsi_value if rsi_value is not None else 0.0,
+            entry_price or 0, window_index
         )
 
         await broadcast({
@@ -405,6 +453,9 @@ class WebSignalEngine:
             "windowIndex": window_index,
             "score": score,
             "usedFallback": used_fallback,
+            "confidence": confidence.value,
+            "trigger": trigger,
+            "rsi": rsi_value,
             "time": signal_time,
         })
 
