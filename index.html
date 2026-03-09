@@ -538,8 +538,8 @@
                 <div class="meta-value" id="signalScore">--</div>
             </div>
             <div class="signal-meta-item">
-                <div class="meta-label">Fallback</div>
-                <div class="meta-value" id="signalFallback">--</div>
+                <div class="meta-label">Confidence</div>
+                <div class="meta-value" id="signalConfidence">--</div>
             </div>
         </div>
     </div>
@@ -595,7 +595,7 @@
             </div>
         </div>
         <div class="card" style="margin-bottom:0;">
-            <div class="card-title">Trend</div>
+            <div class="card-title">Trend &amp; RSI</div>
             <div class="indicator-row">
                 <span class="indicator-label">EMA-20</span>
                 <span class="indicator-value" id="ema20">--</span>
@@ -607,6 +607,10 @@
             <div class="indicator-row">
                 <span class="indicator-label">Trend</span>
                 <span class="indicator-value" id="trendDir" style="color:var(--text-muted);">NEUTRAL</span>
+            </div>
+            <div class="indicator-row">
+                <span class="indicator-label">RSI (14)</span>
+                <span class="indicator-value" id="rsiValue" style="color:var(--text-muted);">--</span>
             </div>
             <div class="indicator-row">
                 <span class="indicator-label">Price Dir</span>
@@ -633,8 +637,16 @@
             <span class="indicator-label">Price Dir (+/-1)</span>
             <span class="indicator-value neutral" id="scorePrice">0</span>
         </div>
+        <div class="indicator-row">
+            <span class="indicator-label">RSI (+/-1)</span>
+            <span class="indicator-value neutral" id="scoreRsi">0</span>
+        </div>
+        <div class="indicator-row">
+            <span class="indicator-label">Confidence</span>
+            <span class="indicator-value" id="confidenceValue" style="color:var(--text-muted);">--</span>
+        </div>
         <div class="score-legend">
-            CALL &ge; +3 &nbsp;&bull;&nbsp; PUT &le; -3 &nbsp;&bull;&nbsp; Otherwise: Fallback
+            CALL &ge; +2 &nbsp;&bull;&nbsp; PUT &le; -2 &nbsp;&bull;&nbsp; Otherwise: Fallback
         </div>
     </div>
 
@@ -837,6 +849,18 @@
             $('trendDir').style.color = tc;
             $('trendDir').textContent = trend.direction.toUpperCase();
         }
+        // RSI
+        var rsi = data.rsi;
+        if (rsi) {
+            var rsiEl = $('rsiValue');
+            if (rsi.value !== null && rsi.value !== undefined) {
+                rsiEl.textContent = parseFloat(rsi.value).toFixed(1);
+                rsiEl.style.color = rsi.signal === 'overbought' ? 'var(--red)' : rsi.signal === 'oversold' ? 'var(--green)' : 'var(--text-muted)';
+            } else {
+                rsiEl.textContent = '--';
+                rsiEl.style.color = 'var(--text-muted)';
+            }
+        }
         if (score !== undefined && score !== null) {
             var tot = score.total || 0;
             $('totalScore').textContent = (tot >= 0 ? '+' : '') + tot;
@@ -850,6 +874,14 @@
             setScoreEl('scoreMom', score.momentum || 0);
             setScoreEl('scoreTrend', score.trend || 0);
             setScoreEl('scorePrice', score.price || 0);
+            setScoreEl('scoreRsi', score.rsi || 0);
+        }
+        // Confidence
+        var conf = data.confidence;
+        if (conf !== undefined && conf !== null) {
+            var confEl = $('confidenceValue');
+            confEl.textContent = Math.round(conf) + '%';
+            confEl.style.color = conf >= 70 ? 'var(--green)' : conf >= 50 ? 'var(--yellow)' : 'var(--red)';
         }
     }
 
@@ -875,7 +907,8 @@
         var expDate = new Date(data.expiryEpoch * 1000);
         $('expiryTime').textContent = expDate.toLocaleTimeString('en-US', {hour12: false, hour:'2-digit', minute:'2-digit'});
         $('signalScore').textContent = (data.score >= 0 ? '+' : '') + data.score;
-        $('signalFallback').textContent = data.usedFallback ? 'YES' : 'NO';
+        var confPct = data.confidence !== undefined ? Math.round(data.confidence) + '%' : (data.usedFallback ? 'LOW' : 'HIGH');
+        $('signalConfidence').textContent = confPct;
         $('chartSignalBadge').className = 'chart-signal-badge ' + sig;
         $('chartSignalBadge').textContent = data.signal;
         currentSignalStr = data.signal;
@@ -907,7 +940,7 @@
         $('entryPrice').textContent = '--';
         $('expiryTime').textContent = '--';
         $('signalScore').textContent = '--';
-        $('signalFallback').textContent = '--';
+        $('signalConfidence').textContent = '--';
         $('chartSignalBadge').className = 'chart-signal-badge pending';
         $('chartSignalBadge').textContent = 'PENDING';
         currentSignalStr = null;

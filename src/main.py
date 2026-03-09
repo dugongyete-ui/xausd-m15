@@ -120,7 +120,7 @@ class SignalEngine:
         price_now = self.tick_aggregator.price_now
 
         # Decision (includes fallback)
-        signal_val, score, used_fallback = self.decision_engine.evaluate(
+        signal_val, score, used_fallback, confidence = self.decision_engine.evaluate(
             momentum_bias=momentum_bias,
             trend_direction=trend_direction,
             price_start=price_start,

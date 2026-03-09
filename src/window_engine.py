@@ -26,8 +26,13 @@ class WindowPhase(enum.Enum):
 
     DATA_COLLECTION = "data_collection"  # 0 – 180 s
     ANALYSIS = "analysis"                # 180 – 300 s
-    SIGNAL_GENERATION = "signal_generation"  # exactly 300 s
-    HOLD = "hold"                        # 300 – 900 s
+    SIGNAL_GENERATION = "signal_generation"  # 300 – 305 s
+    HOLD = "hold"                        # 305 – 900 s
+
+
+# Minimum elapsed seconds before an early signal can be generated
+# during the analysis phase when confidence is high enough.
+EARLY_SIGNAL_MIN_ELAPSED = 200  # ~3m20s into the window
 
 
 class WindowEngine:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -14,17 +15,23 @@ import websockets.asyncio.client as wsc
 
 from src.anti_spike_filter import AntiSpikeFilter
 from src.momentum_analyzer import MomentumAnalyzer, MomentumBias
-from src.signal_decision import Signal, SignalDecisionEngine
+from src.rsi import RSIIndicator, RSISignal
+from src.signal_decision import (
+    CALL_THRESHOLD,
+    PUT_THRESHOLD,
+    Signal,
+    SignalDecisionEngine,
+)
 from src.tick_aggregator import TickAggregator
 from src.tick_buffer import TickBuffer
 from src.trend_engine import TrendEngine, TrendDirection
-from src.window_engine import WindowEngine, WindowPhase
+from src.window_engine import WindowEngine, WindowPhase, EARLY_SIGNAL_MIN_ELAPSED
 
 logger = logging.getLogger(__name__)
 
 DERIV_WS_URL = "wss://ws.derivws.com/websockets/v3?app_id=114791"
 SUBSCRIBE_PAYLOAD = json.dumps({"ticks": "frxXAUUSD", "subscribe": 1})
-PORT = 5000
+PORT = int(os.environ.get("PORT", 5000))
 
 MARKET_CLOSED_RETRY_INTERVAL = 60.0
 NORMAL_BACKOFF_MAX = 30.0
@@ -77,6 +84,7 @@ class WebSignalEngine:
         self.tick_aggregator = TickAggregator()
         self.momentum_analyzer = MomentumAnalyzer(self.tick_buffer)
         self.trend_engine = TrendEngine(short_period=20, long_period=50)
+        self.rsi_indicator = RSIIndicator(self.tick_buffer)
         self.decision_engine = SignalDecisionEngine()
         self._signal_emitted = False
         self._current_signal: Signal | None = None
@@ -299,6 +307,21 @@ class WebSignalEngine:
             engine_state["indicators"] = indicators
             await broadcast({"type": "indicators", **indicators})
 
+            # Dynamic signal timing: generate early during analysis phase
+            # if confidence is high enough and we have enough data
+            if (
+                phase is WindowPhase.ANALYSIS
+                and not self._signal_emitted
+                and self.window_engine.elapsed >= EARLY_SIGNAL_MIN_ELAPSED
+                and indicators.get("confidence", 0) >= 70.0
+            ):
+                logger.info(
+                    "Early signal: confidence=%.0f%% at %.0fs elapsed",
+                    indicators["confidence"],
+                    self.window_engine.elapsed,
+                )
+                await self._generate_signal()
+
         # Generate signal in both SIGNAL_GENERATION and HOLD phases
         # (hold included for mid-window starts where minute 5 was missed)
         if phase in (WindowPhase.SIGNAL_GENERATION, WindowPhase.HOLD) and not self._signal_emitted:
@@ -308,6 +331,7 @@ class WebSignalEngine:
         ratio, momentum_bias = self.momentum_analyzer.compute()
         prices = self.tick_buffer.prices
         ema20, ema50, trend_dir = self.trend_engine.compute(prices)
+        rsi_value, rsi_signal = self.rsi_indicator.compute()
 
         p_start = self.tick_aggregator.price_start
         p_now = self.tick_aggregator.price_now
@@ -320,6 +344,7 @@ class WebSignalEngine:
                 s_price = 1
             elif p_now < p_start:
                 s_price = -1
+        s_rsi = 1 if rsi_signal is RSISignal.OVERSOLD else (-1 if rsi_signal is RSISignal.OVERBOUGHT else 0)
 
         p_list = self.tick_buffer.prices
         upticks = downticks = 0
@@ -328,6 +353,11 @@ class WebSignalEngine:
                 upticks += 1
             elif p_list[i] < p_list[i - 1]:
                 downticks += 1
+
+        total_score = s_mom + s_trend + s_price + s_rsi
+        # Compute confidence preview
+        used_fb = not (total_score >= CALL_THRESHOLD or total_score <= PUT_THRESHOLD)
+        confidence = SignalDecisionEngine._compute_confidence(total_score, used_fb)
 
         return {
             "momentum": {
@@ -341,22 +371,30 @@ class WebSignalEngine:
                 "ema20": ema20,
                 "ema50": ema50,
             },
+            "rsi": {
+                "value": rsi_value,
+                "signal": rsi_signal.value,
+            },
             "score": {
-                "total": s_mom + s_trend + s_price,
+                "total": total_score,
                 "momentum": s_mom,
                 "trend": s_trend,
                 "price": s_price,
+                "rsi": s_rsi,
             },
+            "confidence": confidence,
         }
 
     async def _generate_signal(self) -> None:
         ratio, momentum_bias = self.momentum_analyzer.compute()
         prices = self.tick_buffer.prices
         ema20, ema50, trend_dir = self.trend_engine.compute(prices)
-        signal, score, used_fallback = self.decision_engine.evaluate(
+        rsi_value, rsi_signal = self.rsi_indicator.compute()
+        signal, score, used_fallback, confidence = self.decision_engine.evaluate(
             momentum_bias, trend_dir,
             self.tick_aggregator.price_start,
             self.tick_aggregator.price_now,
+            rsi_signal,
         )
 
         entry_price = self.tick_aggregator.price_now
@@ -371,6 +409,7 @@ class WebSignalEngine:
             "windowIndex": window_index,
             "score": score,
             "usedFallback": used_fallback,
+            "confidence": confidence,
             "time": signal_time,
             "expiryPrice": None,
             "outcome": None,
@@ -386,6 +425,7 @@ class WebSignalEngine:
             "windowIndex": window_index,
             "score": score,
             "usedFallback": used_fallback,
+            "confidence": confidence,
             "time": signal_time,
         }
 
@@ -393,8 +433,8 @@ class WebSignalEngine:
         self._current_signal = signal
 
         logger.info(
-            "SIGNAL: %s | score=%+d | fallback=%s | entry=%.2f | window=#%d",
-            signal.value, score, used_fallback, entry_price or 0, window_index
+            "SIGNAL: %s | score=%+d | fallback=%s | confidence=%.0f%% | entry=%.2f | window=#%d",
+            signal.value, score, used_fallback, confidence, entry_price or 0, window_index
         )
 
         await broadcast({
@@ -405,6 +445,7 @@ class WebSignalEngine:
             "windowIndex": window_index,
             "score": score,
             "usedFallback": used_fallback,
+            "confidence": confidence,
             "time": signal_time,
         })
 
@@ -442,6 +483,17 @@ async def index_handler(request: web.Request) -> web.FileResponse:
     return web.FileResponse(Path(__file__).parent / "index.html")
 
 
+async def health_handler(request: web.Request) -> web.Response:
+    """Health check endpoint for load balancers and orchestrators."""
+    return web.json_response({
+        "status": "ok",
+        "derivConnected": engine_state.get("derivConnected", False),
+        "marketClosed": engine_state.get("marketClosed", False),
+        "windowIndex": engine_state.get("windowIndex", 0),
+        "clients": len(connected_clients),
+    })
+
+
 async def ws_handler(request: web.Request) -> web.WebSocketResponse:
     ws = web.WebSocketResponse(heartbeat=30)
     await ws.prepare(request)
@@ -469,6 +521,7 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
 def create_app() -> web.Application:
     app = web.Application()
     app.router.add_get("/", index_handler)
+    app.router.add_get("/health", health_handler)
     app.router.add_get("/ws", ws_handler)
     return app
 
