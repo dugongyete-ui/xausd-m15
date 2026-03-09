@@ -1011,9 +1011,11 @@
         // Recalculate canvas size every frame to stay consistent with container
         var cWidth = container.offsetWidth;
         var cHeight = container.offsetHeight;
-        if (canvas.width !== cWidth * dpr || canvas.height !== cHeight * dpr) {
-            canvas.width = cWidth * dpr;
-            canvas.height = cHeight * dpr;
+        var targetW = Math.round(cWidth * dpr);
+        var targetH = Math.round(cHeight * dpr);
+        if (canvas.width !== targetW || canvas.height !== targetH) {
+            canvas.width = targetW;
+            canvas.height = targetH;
             canvas.style.width = cWidth + 'px';
             canvas.style.height = cHeight + 'px';
         }
